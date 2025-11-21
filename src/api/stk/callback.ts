@@ -1,0 +1,8 @@
+import { NextResponse } from "next/server";
+
+export async function POST(req: Request) {
+  const body = await req.json();
+  console.log("STK CALLBACK:", JSON.stringify(body, null, 2));
+
+  return NextResponse.json({ message: "Callback received" });
+}

@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+@config "../../tailwind.config.js";
+
+/* Print styles for delivery note */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .delivery-note-print,
+  .delivery-note-print * {
+    visibility: visible;
+  }
+
+  .delivery-note-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+    padding: 20px !important;
+  }
+
+  .delivery-note-print button {
+    display: none !important;
+  }
+
+  .delivery-note-print .bg-black\/50 {
+    background: transparent !important;
+  }
+}
