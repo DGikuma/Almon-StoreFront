@@ -1,6 +1,69 @@
 @import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+/* Custom Tab Styling - Corporate Brand Colors */
+[data-slot="tab"][data-selected="true"] {
+  background: linear-gradient(135deg, var(--tab-gradient-start), var(--tab-gradient-mid), var(--tab-gradient-end)) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 0 20px -5px var(--tab-shadow-color) !important;
+  transform: scale(1.05) !important;
+  color: white !important;
+}
+
+[data-slot="tab"][data-selected="true"]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  animation: shimmer 2s infinite;
+  border-radius: inherit;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Tab-specific gradients */
+[data-slot="tab"][data-selected="true"][data-key="roll"] {
+  --tab-gradient-start: rgb(236, 72, 153);
+  --tab-gradient-mid: rgb(244, 63, 94);
+  --tab-gradient-end: rgb(219, 39, 119);
+  --tab-shadow-color: rgba(236, 72, 153, 0.5);
+}
+
+[data-slot="tab"][data-selected="true"][data-key="metre"] {
+  --tab-gradient-start: rgb(14, 165, 233);
+  --tab-gradient-mid: rgb(59, 130, 246);
+  --tab-gradient-end: rgb(79, 70, 229);
+  --tab-shadow-color: rgba(14, 165, 233, 0.5);
+}
+
+[data-slot="tab"][data-selected="true"][data-key="board"] {
+  --tab-gradient-start: rgb(99, 102, 241);
+  --tab-gradient-mid: rgb(168, 85, 247);
+  --tab-gradient-end: rgb(99, 102, 241);
+  --tab-shadow-color: rgba(99, 102, 241, 0.5);
+}
+
+[data-slot="tab"][data-selected="true"][data-key="unit"] {
+  --tab-gradient-start: rgb(16, 185, 129);
+  --tab-gradient-mid: rgb(20, 184, 166);
+  --tab-gradient-end: rgb(6, 182, 212);
+  --tab-shadow-color: rgba(16, 185, 129, 0.5);
+}
 
 @config "../../tailwind.config.js";
+
+/* Fix Leaflet default icon paths */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  z-index: 0;
+}
+
+.leaflet-tile-container img {
+  max-width: none !important;
+}
 
 /* Print styles for delivery note */
 @media print {

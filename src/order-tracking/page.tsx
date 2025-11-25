@@ -103,6 +103,7 @@ export default function TrackOrderAnimated() {
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
   const [timeLeft, setTimeLeft] = useState("");
+  const [mapKey, setMapKey] = useState(`map-${Date.now()}`);
   const truckPosition = useMotionValue(0);
 
   // Handle tracking
@@ -118,6 +119,7 @@ export default function TrackOrderAnimated() {
       setActiveTab("status");
       setCurrentStep(statusSteps.indexOf(found.status));
       setProgress((statusSteps.indexOf(found.status) + 1) * 25);
+      setMapKey(`map-${Date.now()}-${found.id}`); // Generate new map key for each order
       truckPosition.set(0);
     } finally {
       setLoading(false);
@@ -217,7 +219,11 @@ export default function TrackOrderAnimated() {
               </DropdownTrigger>
               <DropdownMenu aria-label="Select dummy order">
                 {dummyOrders.map((o) => (
-                  <DropdownItem key={o.id} onClick={() => setOrderId(o.id)}>
+                  <DropdownItem 
+                    key={o.id} 
+                    textValue={`${o.id} - ${o.status}`}
+                    onClick={() => setOrderId(o.id)}
+                  >
                     {o.id} — {o.status}
                   </DropdownItem>
                 ))}
@@ -266,7 +272,13 @@ export default function TrackOrderAnimated() {
 
               <Tab key="status" title="Order Status">
                 <div className="mt-6">
-                  <Progress value={progress} size="lg" color="primary" className="mb-6" />
+                  <Progress 
+                    value={progress} 
+                    size="lg" 
+                    color="primary" 
+                    className="mb-6"
+                    aria-label={`Order progress: ${progress}%`}
+                  />
                   <div className="flex justify-between items-center">
                     {statusSteps.map((step, index) => (
                       <div key={step} className="flex flex-col items-center text-sm">
@@ -287,20 +299,27 @@ export default function TrackOrderAnimated() {
               </Tab>
 
               <Tab key="map" title="Map View">
-                <div className="mt-4 h-[350px] sm:h-[400px] w-full rounded-xl overflow-hidden shadow-lg">
-                  <Suspense
-                    fallback={
-                      <div className="flex justify-center items-center h-full">
-                        <Spinner label="Loading map..." color="primary" />
-                      </div>
-                    }
-                  >
-                    <LeafletMap
-                      route={route}
-                      interpolatePosition={interpolatePosition}
-                      truckIcon={truckIcon}
-                    />
-                  </Suspense>
+                <div className="mt-4 h-[350px] sm:h-[400px] w-full rounded-xl overflow-hidden shadow-lg relative">
+                  {order ? (
+                    <Suspense
+                      fallback={
+                        <div className="flex justify-center items-center h-full bg-gray-100 dark:bg-gray-800">
+                          <Spinner label="Loading map..." color="primary" />
+                        </div>
+                      }
+                    >
+                      <LeafletMap
+                        route={route}
+                        interpolatePosition={interpolatePosition}
+                        truckIcon={truckIcon}
+                        mapKey={mapKey}
+                      />
+                    </Suspense>
+                  ) : (
+                    <div className="flex justify-center items-center h-full bg-gray-100 dark:bg-gray-800">
+                      <p className="text-gray-500">Track an order to view the map</p>
+                    </div>
+                  )}
                 </div>
               </Tab>
             </Tabs>

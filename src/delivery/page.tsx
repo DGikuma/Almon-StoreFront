@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import axios from "axios";
 
 interface OrderItem {
-  id: number;
+  id: string | number;
+  product_id?: string;
   name: string;
   confirmed: boolean;
   price: number;
@@ -19,47 +21,18 @@ interface ModalProps {
 }
 
 // Dummy data for testing with various units (metres, rolls, sheets, units)
-const dummyOrderItems: OrderItem[] = [
-  // Rolls
-  { id: 1, name: "Frontlit Banner 1.5m - 440gsm", confirmed: false, price: 4200, quantity: 3, unit: "roll" },
-  { id: 2, name: "Frontlit Banner 2.7m - 440gsm", confirmed: false, price: 7200, quantity: 2, unit: "roll" },
-  { id: 3, name: "Frosted Window Film Roll 1.27m", confirmed: false, price: 7200, quantity: 1, unit: "roll" },
-  { id: 4, name: "One Way Vision 1.35m", confirmed: false, price: 6300, quantity: 2, unit: "roll" },
-  { id: 5, name: "DTF PET Film 0.6m - 100m", confirmed: false, price: 12400, quantity: 1, unit: "roll" },
-  { id: 6, name: "Rainbow Film 1.37m", confirmed: false, price: 6900, quantity: 1, unit: "roll" },
-  { id: 7, name: "Satin 0.914m", confirmed: false, price: 8900, quantity: 1, unit: "roll" },
-  { id: 8, name: "Sparkle Frost Glitters 4ft", confirmed: false, price: 8800, quantity: 1, unit: "roll" },
-  { id: 9, name: "Masking Tape 1 Inch", confirmed: false, price: 450, quantity: 10, unit: "roll" },
-
-  // Metres
-  { id: 10, name: "Black Back 2 Metre", confirmed: false, price: 1800, quantity: 8, unit: "metre" },
-  { id: 11, name: "Black Back 1.06m - 440gsm", confirmed: false, price: 4900, quantity: 5, unit: "metre" },
-  { id: 12, name: "Black Back 1.6m", confirmed: false, price: 6500, quantity: 3, unit: "metre" },
-  { id: 13, name: "Black Back 3.2m - 440gsm", confirmed: false, price: 8900, quantity: 2, unit: "metre" },
-
-  // Sheets
-  { id: 14, name: "Corex 5mm Sheet", confirmed: false, price: 1800, quantity: 15, unit: "sheet" },
-  { id: 15, name: "Aluco 3mm Black Sheet", confirmed: false, price: 3100, quantity: 8, unit: "sheet" },
-  { id: 16, name: "Aluco Blue Sheet", confirmed: false, price: 3200, quantity: 6, unit: "sheet" },
-  { id: 17, name: "Aluco Gold Brushed Sheet", confirmed: false, price: 3500, quantity: 4, unit: "sheet" },
-  { id: 18, name: "Aluco Silver Brushed Sheet", confirmed: false, price: 3500, quantity: 4, unit: "sheet" },
-  { id: 19, name: "Aluco White 3mm Sheet", confirmed: false, price: 3000, quantity: 5, unit: "sheet" },
-  { id: 20, name: "Forex 3mm Sheet", confirmed: false, price: 2600, quantity: 10, unit: "sheet" },
-  { id: 21, name: "Forex 5mm Sheet", confirmed: false, price: 3400, quantity: 7, unit: "sheet" },
-
-  // Units
-  { id: 22, name: "Aluminium Big Cutter", confirmed: false, price: 950, quantity: 2, unit: "unit" },
-  { id: 23, name: "Aluminium Small Cutter", confirmed: false, price: 450, quantity: 4, unit: "unit" },
-  { id: 24, name: "Pen Executive", confirmed: false, price: 150, quantity: 24, unit: "unit" },
-  { id: 25, name: "Super Glue", confirmed: false, price: 350, quantity: 12, unit: "unit" },
-  { id: 26, name: "Wrist Band Small Yellow", confirmed: false, price: 40, quantity: 50, unit: "unit" },
-  { id: 27, name: "Wrist Band Small Black", confirmed: false, price: 40, quantity: 50, unit: "unit" },
-  { id: 28, name: "Wrist Band Small Blue", confirmed: false, price: 40, quantity: 50, unit: "unit" },
-];
+// Note: This is kept for reference but not currently used
+// const dummyOrderItems: OrderItem[] = [
+//   // Rolls
+//   { id: 1, name: "Frontlit Banner 1.5m - 440gsm", confirmed: false, price: 4200, quantity: 3, unit: "roll" },
+//   { id: 2, name: "Frontlit Banner 2.7m - 440gsm", confirmed: false, price: 7200, quantity: 2, unit: "roll" },
+//   // ... more items
+// ];
 
 export const ConfirmDeliveryModal: React.FC<ModalProps> = ({ isOpen, onClose, orderItems }) => {
-  const [items, setItems] = useState<OrderItem[]>(orderItems || dummyOrderItems);
+  const [items, setItems] = useState<OrderItem[]>(orderItems || []);
   const [orderNumber, setOrderNumber] = useState("");
+  const [loadingOrder, setLoadingOrder] = useState(false);
   const [showDeliveryNote, setShowDeliveryNote] = useState(false);
   const [deliveryNoteData, setDeliveryNoteData] = useState<{
     orderNumber: string;
@@ -67,50 +40,126 @@ export const ConfirmDeliveryModal: React.FC<ModalProps> = ({ isOpen, onClose, or
     missingItems: OrderItem[];
     date: string;
   } | null>(null);
-  const [customerName, setCustomerName] = useState("");
-  const [customerSignature, setCustomerSignature] = useState<string | null>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [otpError, setOtpError] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [deliveryCompleted, setDeliveryCompleted] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
 
   useEffect(() => {
     if (orderItems && orderItems.length > 0) {
-      setItems(orderItems);
-    } else {
-      setItems(dummyOrderItems);
+      setItems(orderItems.map(item => ({ ...item, confirmed: false })));
     }
   }, [orderItems]);
 
-  const toggleItem = (id: number) => {
+  // Fetch order items when order number is entered
+  const fetchOrderItems = async () => {
+    if (!orderNumber.trim()) {
+      setOtpError("Please enter an order ID");
+      return;
+    }
+
+    setLoadingOrder(true);
+    setOtpError("");
+
+    try {
+      const response = await axios.get(`/api/delivery/order-items?order_id=${orderNumber}`);
+      const orderData = response.data;
+
+      if (orderData.items && orderData.items.length > 0) {
+        setItems(orderData.items.map((item: any) => ({
+          id: item.id,
+          product_id: item.product_id,
+          name: item.name,
+          confirmed: false,
+          price: item.price,
+          quantity: item.quantity,
+          unit: item.unit,
+        })));
+        setPhoneNumber(orderData.delivery?.recipient_phone || "");
+      } else {
+        setOtpError("No items found for this order");
+        setItems([]);
+      }
+    } catch (error: any) {
+      setOtpError(error.response?.data?.message || "Failed to load order items");
+      setItems([]);
+    } finally {
+      setLoadingOrder(false);
+    }
+  };
+
+  const toggleItem = (id: string | number) => {
     setItems((prev) =>
       prev.map((item) => (item.id === id ? { ...item, confirmed: !item.confirmed } : item))
     );
   };
 
-  const handleAcceptDelivery = () => {
+  const handleGenerateOtp = async () => {
     const confirmedItems = items.filter((item) => item.confirmed);
-    const unconfirmedItems = items.filter((item) => !item.confirmed);
 
-    console.log("Order Number:", orderNumber);
-    console.log("Confirmed Items:", confirmedItems);
-    console.log("Missing Items:", unconfirmedItems);
+    if (confirmedItems.length === 0) {
+      setOtpError("Please select at least one item that has been delivered");
+      return;
+    }
 
-    // Store delivery note data
-    setDeliveryNoteData({
-      orderNumber: orderNumber || "N/A",
-      receivedItems: confirmedItems,
-      missingItems: unconfirmedItems,
-      date: new Date().toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-    });
+    if (!orderNumber.trim()) {
+      setOtpError("Please enter an order ID");
+      return;
+    }
 
-    // Show delivery note
-    setShowDeliveryNote(true);
+    setOtpLoading(true);
+    setOtpError("");
+
+    try {
+      const deliveredItems = confirmedItems.map(item => ({
+        product_id: item.product_id || item.id.toString(),
+        quantity: item.quantity,
+        price: item.price,
+      }));
+
+      const response = await axios.post("/api/delivery/generate-otp", {
+        order_id: orderNumber,
+        delivered_items: deliveredItems,
+      });
+
+      setOtpSent(true);
+      setOtpError("");
+
+      // Store delivery note data
+      const unconfirmedItems = items.filter((item) => !item.confirmed);
+      setDeliveryNoteData({
+        orderNumber: orderNumber,
+        receivedItems: confirmedItems,
+        missingItems: unconfirmedItems,
+        date: new Date().toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      });
+
+      // Show delivery note
+      setShowDeliveryNote(true);
+
+      // In development, show OTP in console (remove in production)
+      if (response.data.otp) {
+        console.log("OTP (dev only):", response.data.otp);
+      }
+    } catch (error: any) {
+      setOtpError(error.response?.data?.message || "Failed to generate OTP");
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleAcceptDelivery = () => {
+    // This is now handled by handleGenerateOtp
+    handleGenerateOtp();
   };
 
   const handlePrintDeliveryNote = () => {
@@ -120,8 +169,12 @@ export const ConfirmDeliveryModal: React.FC<ModalProps> = ({ isOpen, onClose, or
   const handleCloseDeliveryNote = () => {
     setShowDeliveryNote(false);
     setDeliveryCompleted(false);
-    setCustomerSignature(null);
-    setCustomerName("");
+    setOtp("");
+    setOtpSent(false);
+    setOtpError("");
+    setOrderNumber("");
+    setItems([]);
+    setDeliveryNoteData(null);
     onClose();
   };
 
@@ -135,83 +188,45 @@ export const ConfirmDeliveryModal: React.FC<ModalProps> = ({ isOpen, onClose, or
     }
   };
 
+  const handleVerifyOtp = async () => {
+    if (!otp.trim() || otp.length !== 6) {
+      setOtpError("Please enter a valid 6-digit OTP");
+      return;
+    }
+
+    if (!deliveryNoteData) {
+      setOtpError("Delivery data not found");
+      return;
+    }
+
+    setVerifyingOtp(true);
+    setOtpError("");
+
+    try {
+      const deliveredItems = deliveryNoteData.receivedItems.map(item => ({
+        product_id: item.product_id || item.id.toString(),
+        quantity: item.quantity,
+        price: item.price,
+      }));
+
+      await axios.post("/api/delivery/verify-otp", {
+        order_id: orderNumber,
+        otp: otp,
+        delivered_items: deliveredItems,
+      });
+
+      setDeliveryCompleted(true);
+      setOtpError("");
+    } catch (error: any) {
+      setOtpError(error.response?.data?.message || "Failed to verify OTP");
+    } finally {
+      setVerifyingOtp(false);
+    }
+  };
+
   const handleCompleteDelivery = () => {
-    setDeliveryCompleted(true);
+    handleVerifyOtp();
   };
-
-  // Signature canvas handlers
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    setIsDrawing(true);
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const x = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = "touches" in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
-
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-  };
-
-  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const x = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = "touches" in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
-
-    ctx.lineTo(x, y);
-    ctx.stroke();
-  };
-
-  const stopDrawing = () => {
-    if (isDrawing) {
-      setIsDrawing(false);
-      const canvas = canvasRef.current;
-      if (canvas) {
-        setCustomerSignature(canvas.toDataURL());
-      }
-    }
-  };
-
-  const clearSignature = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setCustomerSignature(null);
-  };
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    ctx.strokeStyle = "#1f2937";
-    ctx.lineWidth = 2;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-
-    // Restore signature if exists
-    if (customerSignature) {
-      const img = new Image();
-      img.onload = () => {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0);
-      };
-      img.src = customerSignature;
-    }
-  }, [customerSignature]);
 
   return (
     <>
@@ -226,13 +241,25 @@ export const ConfirmDeliveryModal: React.FC<ModalProps> = ({ isOpen, onClose, or
             >
               <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">Confirm Your Delivery</h2>
 
-              <input
-                type="text"
-                placeholder="Enter your order number"
-                value={orderNumber}
-                onChange={(e) => setOrderNumber(e.target.value)}
-                className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded mb-4 dark:bg-gray-700 dark:text-gray-100"
-              />
+              <div className="mb-4">
+                <input
+                  type="text"
+                  placeholder="Enter your order ID (e.g., SAL251100001)"
+                  value={orderNumber}
+                  onChange={(e) => setOrderNumber(e.target.value)}
+                  className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded mb-2 dark:bg-gray-700 dark:text-gray-100"
+                />
+                <button
+                  onClick={fetchOrderItems}
+                  disabled={loadingOrder || !orderNumber.trim()}
+                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white py-2 px-4 rounded font-semibold"
+                >
+                  {loadingOrder ? "Loading..." : "Load Order Items"}
+                </button>
+                {otpError && !showDeliveryNote && (
+                  <p className="text-red-500 text-sm mt-2">{otpError}</p>
+                )}
+              </div>
 
               <div className="mb-4 max-h-60 overflow-y-auto">
                 {items.map((item) => (
@@ -254,12 +281,15 @@ export const ConfirmDeliveryModal: React.FC<ModalProps> = ({ isOpen, onClose, or
                 ))}
               </div>
 
-              <button
-                onClick={handleAcceptDelivery}
-                className="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded font-semibold"
-              >
-                Accept Delivery
-              </button>
+              {items.length > 0 && (
+                <button
+                  onClick={handleAcceptDelivery}
+                  disabled={otpLoading || items.filter(item => item.confirmed).length === 0}
+                  className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white py-2 px-4 rounded font-semibold"
+                >
+                  {otpLoading ? "Generating OTP..." : "Generate OTP & Continue"}
+                </button>
+              )}
 
               <button
                 onClick={onClose}
@@ -515,63 +545,51 @@ export const ConfirmDeliveryModal: React.FC<ModalProps> = ({ isOpen, onClose, or
                 </div>
               </div>
 
-              {/* Signatures Section */}
+              {/* OTP Verification Section */}
               <div className="mt-8 mb-6 grid grid-cols-2 gap-8 border-t-2 border-gray-300 dark:border-gray-600 pt-6">
                 <div>
                   <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">
-                    Customer Signature
+                    OTP Verification
                   </p>
-                  <div className="border-2 border-gray-300 dark:border-gray-600 rounded-lg p-2 mb-2 bg-white dark:bg-gray-700">
-                    {customerSignature ? (
-                      <div className="relative">
-                        <img
-                          src={customerSignature}
-                          alt="Customer Signature"
-                          className="w-full h-20 object-contain border border-gray-200 dark:border-gray-600 rounded"
-                        />
-                        <button
-                          onClick={clearSignature}
-                          className="absolute top-0 right-0 text-xs px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded"
-                        >
-                          ✕
-                        </button>
+                  {otpSent ? (
+                    <>
+                      <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                        <p className="text-sm text-blue-800 dark:text-blue-200 font-semibold mb-1">
+                          ✓ OTP Sent Successfully
+                        </p>
+                        <p className="text-xs text-blue-700 dark:text-blue-300">
+                          An OTP has been sent to {phoneNumber ? phoneNumber.replace(/(\d{3})(\d{3})(\d{4})/, '$1***$3') : 'your registered phone number'}
+                        </p>
+                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
+                          Please check your phone and enter the 6-digit OTP below to complete delivery.
+                        </p>
                       </div>
-                    ) : (
-                      <>
-                        <canvas
-                          ref={canvasRef}
-                          width={300}
-                          height={80}
-                          className="w-full h-20 cursor-crosshair border border-gray-200 dark:border-gray-600 rounded"
-                          onMouseDown={startDrawing}
-                          onMouseMove={draw}
-                          onMouseUp={stopDrawing}
-                          onMouseLeave={stopDrawing}
-                          onTouchStart={startDrawing}
-                          onTouchMove={draw}
-                          onTouchEnd={stopDrawing}
+                      <div className="mb-2">
+                        <input
+                          type="text"
+                          placeholder="Enter 6-digit OTP"
+                          value={otp}
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                            setOtp(value);
+                            setOtpError("");
+                          }}
+                          maxLength={6}
+                          className="w-full px-4 py-3 text-lg text-center border-2 border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100 font-mono tracking-widest"
                         />
-                        <div className="flex gap-2 mt-2">
-                          <button
-                            onClick={clearSignature}
-                            className="text-xs px-2 py-1 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 rounded text-gray-700 dark:text-gray-300"
-                          >
-                            Clear
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  <div className="mb-2">
-                    <input
-                      type="text"
-                      placeholder="Enter your name"
-                      value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
-                      className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-gray-100"
-                    />
-                  </div>
-                  <p className="text-xs text-gray-600 dark:text-gray-400">
+                        {otpError && (
+                          <p className="text-red-500 text-sm mt-2">{otpError}</p>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                      <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                        Please select the items that have been delivered and click "Generate OTP" to receive an OTP on your phone.
+                      </p>
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
                     <span className="font-semibold">Date:</span> {(() => {
                       const dateStr = deliveryNoteData.date;
                       const dateOnly = dateStr.includes(',') ? dateStr.split(',')[0] : dateStr.split(' at ')[0];
@@ -582,11 +600,6 @@ export const ConfirmDeliveryModal: React.FC<ModalProps> = ({ isOpen, onClose, or
                       });
                     })()}
                   </p>
-                  {customerName && (
-                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                      <span className="font-semibold">Name:</span> {customerName}
-                    </p>
-                  )}
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">
@@ -636,12 +649,16 @@ export const ConfirmDeliveryModal: React.FC<ModalProps> = ({ isOpen, onClose, or
                   <>
                     <button
                       onClick={handleCompleteDelivery}
-                      disabled={!customerSignature || !customerName}
+                      disabled={!otpSent || !otp || otp.length !== 6 || verifyingOtp}
                       className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white py-3 px-4 rounded font-semibold text-lg"
                     >
-                      {!customerSignature || !customerName
-                        ? "Please sign and enter your name to complete delivery"
-                        : "✓ Complete Delivery"}
+                      {verifyingOtp
+                        ? "Verifying OTP..."
+                        : !otpSent
+                          ? "Please generate OTP first"
+                          : !otp || otp.length !== 6
+                            ? "Please enter the 6-digit OTP"
+                            : "✓ Complete Delivery"}
                     </button>
                     <div className="flex gap-3">
                       <button

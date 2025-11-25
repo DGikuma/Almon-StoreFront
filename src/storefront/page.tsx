@@ -1,22 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ProductCard } from "@/components/ProductCard";
 import { CartDrawer } from "@/components/CartDrawer";
 import { CheckoutModal } from "@/components/CheckoutModal";
 import { CartButton } from "@/components/CartButton";
 import { SearchBar } from "@/components/SearchBar";
 import TrackOrderPopup from "@/components/TrackOrderPopup";
 import DeliveryModal from "@/components/DeliveryModal";
+import { ProductCard } from "@/components/ProductCard";
 import { motion } from "framer-motion";
-import { Divider, Button, Tabs, Tab } from "@heroui/react";
+import { Tabs, Tab } from "@heroui/react";
 import { SunIcon, MoonIcon, ShoppingBagIcon } from "@heroicons/react/24/outline";
+import { fetchProducts, pollProducts, type FrontendProduct } from "@/lib/productService";
 
 // ---------- Types & Data (kept from original, lightly cleaned) ----------
-interface ProductVariant { name: string; price: number }
-interface Product { id: string; name: string; image: string; variants: ProductVariant[]; description?: string }
+// interface ProductVariant { name: string; price: number }
+// interface Product { id: string; name: string; image: string; variants: ProductVariant[]; description?: string }
 
-const productSaleType: Record<string, "roll" | "metre" | "sheet" | "unit"> = {
+const productSaleType: Record<string, "roll" | "metre" | "board" | "unit"> = {
   "frontlit-banner-1-5-m-440gsm": "roll",
   "frontlit-banner-2-7-m-440gsm": "roll",
   "frontlit-banner-1-2-m-440gsm": "roll",
@@ -24,23 +25,23 @@ const productSaleType: Record<string, "roll" | "metre" | "sheet" | "unit"> = {
   "black-back-1-6": "roll",
   "black-back-2-metre": "metre",
   "black-back-3-2-440gsm": "roll",
-  "corex-5mm": "sheet",
-  "aluco-3mm-black": "sheet",
-  "aluco-blue": "sheet",
-  "aluco-gold-brushed": "sheet",
-  "aluco-silver-brushed": "sheet",
-  "aluco-white-3mm": "sheet",
+  "corex-5mm": "board",
+  "aluco-3mm-black": "board",
+  "aluco-blue": "board",
+  "aluco-gold-brushed": "board",
+  "aluco-silver-brushed": "board",
+  "aluco-white-3mm": "board",
   "aluminium-big-cutter": "unit",
   "aluminium-normal-rollup": "unit",
   "aluminium-small-cutter": "unit",
-  "corex-3mm": "sheet",
-  "forex-2mm": "sheet",
-  "forex-3mm": "sheet",
-  "forex-4mm": "sheet",
-  "forex-5mm": "sheet",
-  "forex-celucar-10mm": "sheet",
+  "corex-3mm": "board",
+  "forex-2mm": "board",
+  "forex-3mm": "board",
+  "forex-4mm": "board",
+  "forex-5mm": "board",
+  "forex-celucar-10mm": "board",
   "scissors": "unit",
-  "abs-0-9": "sheet",
+  "abs-0-9": "board",
   "airbag": "unit",
   "backdrop-2-25-3-65": "unit",
   "backdrop-3-3": "unit",
@@ -54,7 +55,7 @@ const productSaleType: Record<string, "roll" | "metre" | "sheet" | "unit"> = {
   "channellium": "unit",
   "clear-gloss-roll-1-35": "roll",
   "clear-matt-roll-1-35": "roll",
-  "corex-4mm": "sheet",
+  "corex-4mm": "board",
   "door-frame-80-180": "unit",
   "dtf-pet-film-0-6-100m": "roll",
   "envelope-a3": "unit",
@@ -93,8 +94,8 @@ const productSaleType: Record<string, "roll" | "metre" | "sheet" | "unit"> = {
   "packing-1-inch-50m": "roll",
   "pen-executive": "unit",
   "permanent-marker": "unit",
-  "persepex-clear": "sheet",
-  "persepex-white": "sheet",
+  "persepex-clear": "board",
+  "persepex-white": "board",
   "perspex-knife": "unit",
   "pop-up-3-by-3": "unit",
   "pop-up-a-shape-80-180": "unit",
@@ -154,7 +155,7 @@ const productSaleType: Record<string, "roll" | "metre" | "sheet" | "unit"> = {
   "x-stand": "unit"
 };
 
-const productDetailsEntries = [
+/* const productDetailsEntries = [
   ["frontlit-banner-1-5-m-440gsm", { price: 4200, image: "/images/products/frontlit-banner-1-5.jpg" }],
   ["frontlit-banner-2-7-m-440gsm", { price: 7200, image: "/images/products/frontlit-banner-1-5.jpg" }],
   ["frontlit-banner-1-2-m-440gsm", { price: 3500, image: "/images/products/frontlit-banner-1-5.jpg" }],
@@ -292,7 +293,7 @@ const productDetailsEntries = [
   ["x-stand", { price: 1200, image: "/images/products/x-stand.jpg" }],
 ] as const;
 
-const productDetails = Object.fromEntries(productDetailsEntries) as Record<string, { price: number; image: string }>;
+const productDetails = Object.fromEntries(productDetailsEntries) as Record<string, { price: number; image: string }>; */
 
 // ---------- Delivery Fee Configuration ----------
 const deliveryAreas: Record<string, number> = {
@@ -319,12 +320,12 @@ const deliveryAreas: Record<string, number> = {
 };
 
 // ---------- Utility helpers ----------
-const formatProductName = (id: string) =>
-  id
-    .replace(/-/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-    .replace(/(\d)\s+(\d)/g, "$1.$2")
-    .replace(/\s{2,}/g, " ");
+// const formatProductName = (id: string) =>
+//   id
+//     .replace(/-/g, " ")
+//     .replace(/\b\w/g, (c) => c.toUpperCase())
+//     .replace(/(\d)\s+(\d)/g, "$1.$2")
+//     .replace(/\s{2,}/g, " ");
 
 // ---------- Theme helpers ----------
 const useTheme = () => {
@@ -355,91 +356,261 @@ export default function StorefrontPage() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [search, setSearch] = useState("");
   const { theme, toggle } = useTheme();
-  const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
+  // const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<any>("roll");
   const [trackModalOpen, setTrackModalOpen] = useState(false);
   const [deliveryModalOpen, setDeliveryModalOpen] = useState(false);
   const [deliveryArea, setDeliveryArea] = useState<string>("");
 
+  // Product state from API
+  const [apiProducts, setApiProducts] = useState<FrontendProduct[]>([]);
+  const [_productsLoading, setProductsLoading] = useState(true);
+  const [useApiProducts, setUseApiProducts] = useState(true); // Toggle to use API or fallback
+
   // NOTE: Keep your original product data source and mapping. For compatibility we use `products` variable here.
   // If you'd prefer, import `products` from a shared file. Below is a minimized placeholder so the page compiles
   // during local edits. Replace with the full dataset you already have in the original page.
 
-  type ProductSaleType = "roll" | "metre" | "sheet" | "unit";
+  // type ProductSaleType = "roll" | "metre" | "sheet" | "unit";
 
-  const toVariantLabel = (saleType: ProductSaleType) => {
-    switch (saleType) {
-      case "metre": return "Metre";
-      case "roll": return "Roll";
-      case "sheet": return "Sheet";
-      case "unit":
-      default: return "Unit";
-    }
-  };
+  // const toVariantLabel = (saleType: ProductSaleType) => {
+  //   switch (saleType) {
+  //     case "metre": return "Metre";
+  //     case "roll": return "Roll";
+  //     case "sheet": return "Sheet";
+  //     case "unit":
+  //     default: return "Unit";
+  //   }
+  // };
 
-  const getMetreMultiplier = (variant: string) => {
-    const match = variant.match(/([\d.]+)/);
-    return match ? Number(match[1]) || 1 : 1;
-  };
+  // const getMetreMultiplier = (variant: string) => {
+  //   const match = variant.match(/([\d.]+)/);
+  //   return match ? Number(match[1]) || 1 : 1;
+  // };
 
-  const products: Product[] = useMemo(() => {
-    return Object.entries(productSaleType).map(([id, saleType]) => {
-      const variantLabel = toVariantLabel(saleType);
-      const details = productDetails[id] || { price: 0, image: "/images/product-placeholder.jpg" };
-      return {
-        id,
-        name: formatProductName(id),
-        image: details.image,
-        variants: [{ name: variantLabel, price: details.price }],
-        description: `Sold per ${variantLabel.toLowerCase()}.`,
-      };
-    });
+  // Fetch products from API on mount
+  useEffect(() => {
+    const loadProducts = async () => {
+      setProductsLoading(true);
+      try {
+        const data = await fetchProducts();
+        if (data.products && data.products.length > 0) {
+          setApiProducts(data.products);
+          setUseApiProducts(true);
+        } else {
+          // Fallback to hardcoded products if API fails
+          setUseApiProducts(false);
+        }
+      } catch (error) {
+        console.error("Failed to load products:", error);
+        setUseApiProducts(false);
+      } finally {
+        setProductsLoading(false);
+      }
+    };
+
+    loadProducts();
+
+    // Set up polling for automatic price updates (every 30 seconds)
+    const cleanup = pollProducts((products) => {
+      setApiProducts(products);
+    }, 30000);
+
+    return cleanup;
   }, []);
 
+  // Build product sale type map from API products
+  const apiProductSaleType = useMemo(() => {
+    const map: Record<string, "roll" | "metre" | "board" | "unit"> = {};
+    apiProducts.forEach((product) => {
+      map[product.id] = product.saleType;
+    });
+    return map;
+  }, [apiProducts]);
+
+  // Merge API products with fallback products (currently unused but kept for potential future use)
+  // const products: Product[] = useMemo(() => {
+  //   if (useApiProducts && apiProducts.length > 0) {
+  //     // Use API products
+  //     return apiProducts.map((apiProduct) => ({
+  //       id: apiProduct.id,
+  //       name: apiProduct.name,
+  //       image: apiProduct.image,
+  //       variants: apiProduct.variants,
+  //       description: apiProduct.description,
+  //     }));
+  //   } else {
+  //     // Fallback to hardcoded products
+  //     return Object.entries(productSaleType).map(([id, saleType]) => {
+  //       const variantLabel = toVariantLabel(saleType);
+  //       const details = productDetails[id] || { price: 0, image: "/images/product-placeholder.jpg" };
+  //       return {
+  //         id,
+  //         name: formatProductName(id),
+  //         image: details.image,
+  //         variants: [{ name: variantLabel, price: details.price }],
+  //         description: `Sold per ${variantLabel.toLowerCase()}.`,
+  //       };
+  //     });
+  //   }
+  // }, [useApiProducts, apiProducts]);
+
+  // Filtered products (currently unused but kept for potential future use)
+  // const filteredProducts = useMemo(() => {
+  //   return products.filter((p) =>
+  //     [p.name, p.description ?? "", ...p.variants.map((v) => v.name)]
+  //       .join(" ")
+  //       .toLowerCase()
+  //       .includes(search.toLowerCase())
+  //   );
+  // }, [products, search]);
+
+  // Grouped products by type (currently unused but kept for potential future use)
+  // const productsByType = useMemo(() => {
+  //   const grouped: Record<ProductSaleType, Product[]> = {
+  //     roll: [],
+  //     metre: [],
+  //     sheet: [],
+  //     unit: [],
+  //   };
+  //   filteredProducts.forEach((p) => {
+  //     // Use API product sale type if available, otherwise fallback to hardcoded
+  //     const saleType = (useApiProducts ? apiProductSaleType[p.id] : productSaleType[p.id]) || "unit";
+  //     grouped[saleType].push(p);
+  //   });
+  //   return grouped;
+  // }, [filteredProducts, useApiProducts, apiProductSaleType]);
+
+  // Helper functions (currently unused but kept for potential future use)
+  // const getSelectedVariant = (product: Product) =>
+  //   selectedVariants[product.id] ?? product.variants[0].name;
+
+  // const getVariantPrice = (product: Product, variant: string) => {
+  //   const basePrice = product.variants.find((v) => v.name === variant)?.price ?? product.variants[0].price;
+  //   const saleType = (useApiProducts ? apiProductSaleType[product.id] : productSaleType[product.id]) ?? "unit";
+  //   return saleType === "metre" ? basePrice * getMetreMultiplier(variant) : basePrice;
+  // };
+
+  // Handler functions (currently unused but kept for potential future use)
+  // const handleVariantChange = (productId: string, variant: string) => {
+  //   setSelectedVariants((prev) => ({ ...prev, [productId]: variant }));
+  // };
+
+  // const handleAddToCart = (product: Product) => {
+  //   const variant = getSelectedVariant(product);
+  //   const price = getVariantPrice(product, variant);
+  //   const cartId = `${product.id}-${variant}`;
+  //   const existing = cart.find((item) => item.id === cartId);
+  //   if (existing) {
+  //     setCart(cart.map((item) => item.id === cartId ? { ...item, quantity: item.quantity + 1 } : item));
+  //   } else {
+  //     setCart([...cart, {
+  //       id: cartId,
+  //       productId: product.id, // Store product ID directly for easier order formatting
+  //       name: product.name,
+  //       variant,
+  //       price,
+  //       quantity: 1
+  //     }]);
+  //   }
+  // };
+
+  // const handleIncrease = (cartId: string) => {
+  //   setCart((prev) =>
+  //     prev.map((item) =>
+  //       item.id === cartId ? { ...item, quantity: item.quantity + 1 } : item
+  //     )
+  //   );
+  // };
+
+  // const handleDecrease = (cartId: string) => {
+  //   setCart((prev) =>
+  //     prev
+  //       .map((item) =>
+  //         item.id === cartId
+  //           ? { ...item, quantity: item.quantity - 1 }
+  //           : item
+  //       )
+  //       .filter((item) => item.quantity > 0)
+  //   );
+  // };
+
+  // Transform API products to display format
+  const products = useMemo(() => {
+    return apiProducts.map((apiProduct) => ({
+      id: apiProduct.id,
+      name: apiProduct.name,
+      image: apiProduct.image,
+      variants: apiProduct.variants.map((v) => v.name),
+      description: apiProduct.description || `Sold per ${apiProduct.saleType.toLowerCase()}.`,
+      price: apiProduct.price,
+      saleType: apiProduct.saleType,
+    }));
+  }, [apiProducts]);
+
+  // Filter products by search query
   const filteredProducts = useMemo(() => {
+    if (!search.trim()) return products;
+    const searchLower = search.toLowerCase();
     return products.filter((p) =>
-      [p.name, p.description ?? "", ...p.variants.map((v) => v.name)]
+      [p.name, p.description ?? "", ...p.variants]
         .join(" ")
         .toLowerCase()
-        .includes(search.toLowerCase())
+        .includes(searchLower)
     );
   }, [products, search]);
 
+  // Group products by sale type
   const productsByType = useMemo(() => {
-    const grouped: Record<ProductSaleType, Product[]> = {
+    const grouped: Record<"roll" | "metre" | "board" | "unit", typeof products> = {
       roll: [],
       metre: [],
-      sheet: [],
+      board: [],
       unit: [],
     };
     filteredProducts.forEach((p) => {
-      const saleType = productSaleType[p.id] || "unit";
-      grouped[saleType].push(p);
+      const saleType = p.saleType || "unit";
+      if (saleType in grouped) {
+        grouped[saleType as keyof typeof grouped].push(p);
+      } else {
+        grouped.unit.push(p);
+      }
     });
     return grouped;
   }, [filteredProducts]);
 
-  const getSelectedVariant = (product: Product) =>
-    selectedVariants[product.id] ?? product.variants[0].name;
+  // Selected variants state
+  const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
 
-  const getVariantPrice = (product: Product, variant: string) => {
-    const basePrice = product.variants.find((v) => v.name === variant)?.price ?? product.variants[0].price;
-    const saleType = productSaleType[product.id] ?? "unit";
-    return saleType === "metre" ? basePrice * getMetreMultiplier(variant) : basePrice;
+  // Helper functions
+  const getSelectedVariant = (product: typeof products[0]) =>
+    selectedVariants[product.id] ?? product.variants[0];
+
+  const getVariantPrice = (product: typeof products[0], variant: string) => {
+    const variantObj = apiProducts.find((p) => p.id === product.id)?.variants.find((v) => v.name === variant);
+    return variantObj?.price ?? product.price;
   };
 
   const handleVariantChange = (productId: string, variant: string) => {
     setSelectedVariants((prev) => ({ ...prev, [productId]: variant }));
   };
 
-  const handleAddToCart = (product: Product) => {
+  const handleAddToCart = (product: typeof products[0]) => {
     const variant = getSelectedVariant(product);
     const price = getVariantPrice(product, variant);
-    const existing = cart.find((item) => item.id === `${product.id}-${variant}`);
+    const cartId = `${product.id}-${variant}`;
+    const existing = cart.find((item) => item.id === cartId);
     if (existing) {
-      setCart(cart.map((item) => item.id === `${product.id}-${variant}` ? { ...item, quantity: item.quantity + 1 } : item));
+      setCart(cart.map((item) => item.id === cartId ? { ...item, quantity: item.quantity + 1 } : item));
     } else {
-      setCart([...cart, { id: `${product.id}-${variant}`, name: product.name, variant, price, quantity: 1 }]);
+      setCart([...cart, {
+        id: cartId,
+        productId: product.id,
+        name: product.name,
+        variant,
+        price,
+        quantity: 1
+      }]);
     }
   };
 
@@ -468,240 +639,493 @@ export default function StorefrontPage() {
   const total = subtotal + deliveryFee;
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6 }}>
-      <div className="min-h-screen bg-gradient-to-br from-white via-neutral-50 to-slate-100 dark:from-[#0d0d0d] dark:via-[#111] dark:to-black text-slate-900 dark:text-gray-100 transition-colors duration-500">
-        {/* Header */}
-        <header className="sticky top-0 z-50 bg-white/60 dark:bg-black/30 backdrop-blur-2xl border-b border-white/20 dark:border-white/10 shadow-[0_8px_30px_rgba(0,0,0,0.06)] dark:shadow-[0_8px_30px_rgba(255,255,255,0.03)] supports-[backdrop-filter]:bg-white/40 transition-all duration-500">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
-            {/* Top Row: Logo and Action Buttons */}
-            <div className="flex items-center justify-between gap-3 mb-3 sm:mb-0">
-              <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-                <img src="/images/logo.jpg" alt="Almon Products logo" className="w-12 h-12 sm:w-20 sm:h-20 rounded-xl sm:rounded-2xl object-contain shadow-sm" />
+    <div
+      className="min-h-screen relative overflow-x-hidden
+      bg-gradient-to-br from-white via-slate-50 to-sky-50
+      dark:bg-gradient-to-br dark:from-black dark:via-neutral-900 dark:to-slate-900
+      text-slate-900 dark:text-gray-100
+      transition-colors duration-700 selection:bg-pink-500/40"
+    >
+      {/* Ambient Floating Gradients */}
+      <div className="pointer-events-none absolute -top-40 -left-40 w-[500px] h-[500px] bg-gradient-to-br from-pink-500/30 via-sky-400/20 to-indigo-500/20 blur-[140px] opacity-80"></div>
+      <div className="pointer-events-none absolute bottom-0 right-0 w-[500px] h-[500px] bg-gradient-to-tr from-indigo-600/25 via-pink-500/20 to-sky-400/20 blur-[140px] opacity-70"></div>
+
+      {/* Noise & Vignette Overlays */}
+      <div className="pointer-events-none absolute inset-0 opacity-[0.06] bg-[url('/noise.png')] mix-blend-overlay"></div>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_40%,rgba(0,0,0,0.25)_100%)]"></div>
+
+      {/* ------------------- HEADER ------------------- */}
+      <header className="sticky top-0 z-50 bg-gradient-to-r from-pink-600/15 via-sky-500/10 to-indigo-700/8 dark:from-black/40 dark:via-neutral-900/40 backdrop-blur-3xl border-b border-transparent shadow-lg transition-all duration-500">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
+          {/* Top Row: Logo + Actions */}
+          <div className="flex items-center justify-between gap-3 mb-3 sm:mb-0">
+            <div className="flex items-center gap-3 sm:gap-4 flex-shrink-0">
+              <div className="relative flex items-center gap-3">
+                <div className="w-14 h-14 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-pink-500 to-sky-400 p-0.5 shadow-[0_8px_30px_rgba(132,60,255,0.18)]">
+                  <img
+                    src="/images/logo.jpg"
+                    alt="Almon Products logo"
+                    className="w-full h-full rounded-xl object-cover bg-white/30"
+                  />
+                </div>
                 <div className="hidden sm:block">
-                  <h1 className="text-lg font-extrabold tracking-tight leading-none bg-clip-text text-transparent bg-gradient-to-r from-pink-600 to-sky-600">Almon Products</h1>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Premium Materials & Finishing</p>
-                </div>
-                <div className="sm:hidden">
-                  <h1 className="text-sm font-extrabold tracking-tight leading-none bg-clip-text text-transparent bg-gradient-to-r from-pink-600 to-sky-600">Almon</h1>
+                  <h1 className="text-lg sm:text-2xl font-extrabold tracking-tight leading-none bg-clip-text text-transparent bg-gradient-to-r from-pink-600 via-sky-400 to-indigo-400">
+                    Almon Products
+                  </h1>
+                  <p className="text-xs sm:text-sm text-slate-200/90 dark:text-gray-300/90">
+                    Premium Materials & Finishing
+                  </p>
                 </div>
               </div>
+            </div>
 
-              {/* Action Buttons Row */}
-              <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
-                <Button
-                  onPress={toggle}
-                  isIconOnly
-                  className="rounded-full p-2 sm:px-5 sm:py-3 font-semibold shadow-sm hover:shadow-md active:scale-95 transition-all duration-200 bg-gradient-to-r from-pink-600 to-sky-600 text-white dark:from-pink-500 dark:to-sky-500"
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+              {/* Theme Toggle */}
+              <button
+                onClick={toggle}
+                aria-label="Toggle theme"
+                className="rounded-full p-2 sm:p-3 bg-white/10 hover:bg-white/20 dark:bg-black/20 dark:hover:bg-white/5 ring-1 ring-white/10 backdrop-blur transition-transform active:scale-95 shadow-sm"
+              >
+                <motion.div
+                  key={theme}
+                  initial={{ rotate: -90, scale: 0.8, opacity: 0 }}
+                  animate={{ rotate: 0, scale: 1, opacity: 1 }}
+                  transition={{ duration: 0.35 }}
                 >
-                  <motion.div
-                    key={theme}
-                    initial={{ rotate: -180, opacity: 0, scale: 0.6 }}
-                    animate={{ rotate: 0, opacity: 1, scale: 1 }}
-                    exit={{ rotate: 180, opacity: 0, scale: 0.6 }}
-                    transition={{ duration: 0.4, ease: "easeOut" }}
-                  >
-                    {theme === "dark" ? (
-                      <SunIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-                    ) : (
-                      <MoonIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-                    )}
-                  </motion.div>
-                </Button>
+                  {theme === "dark" ? (
+                    <SunIcon className="w-5 h-5 text-yellow-300" />
+                  ) : (
+                    <MoonIcon className="w-5 h-5 text-indigo-300" />
+                  )}
+                </motion.div>
+              </button>
 
+              {/* Track Order */}
+              <button
+                onClick={() => setTrackModalOpen(true)}
+                className="hidden sm:inline-flex items-center gap-2 px-4 py-2 rounded-xl shadow-xl transform-gpu hover:scale-[1.02] active:scale-98 bg-gradient-to-r from-pink-600 to-sky-500 text-white font-semibold"
+              >
+                <ShoppingBagIcon className="w-5 h-5 opacity-95" />
+                <span className="hidden lg:inline">Track Order</span>
+                <span className="lg:hidden">Track</span>
+              </button>
+
+              {/* Delivery */}
+              <button
+                onClick={() => setDeliveryModalOpen(true)}
+                className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-lg font-medium border border-white/10 bg-gradient-to-b from-white/6 to-transparent text-slate-50 hover:shadow-md"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"
+                  />
+                </svg>
+                <span>Delivery</span>
+              </button>
+
+              {/* Cart */}
+              <div className="relative">
                 <CartButton count={cart.reduce((s, i) => s + i.quantity, 0)} onOpen={() => setDrawerOpen(true)} />
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-pink-400 blur-sm opacity-80" aria-hidden="true"></span>
+              </div>
 
-                {/* Delivery Button - Mobile Icon, Desktop Full */}
-                <Button
-                  onPress={() => setDeliveryModalOpen(true)}
-                  color="primary"
-                  isIconOnly
-                  className="sm:hidden rounded-full p-2 shadow-sm hover:shadow-md"
-                  title="Delivery"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+              {/* Mobile Compact Actions */}
+              <div className="sm:hidden flex items-center gap-2">
+                <button onClick={() => setDeliveryModalOpen(true)} className="rounded-full p-2 bg-white/8">
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"
+                    />
                   </svg>
-                </Button>
-                <Button
-                  onPress={() => setDeliveryModalOpen(true)}
-                  color="primary"
-                  className="hidden sm:flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl sm:rounded-2xl shadow-sm hover:shadow-md text-sm sm:text-base"
-                >
-                  Delivery
-                </Button>
-
-                {/* Track Order Button - Mobile Icon, Desktop Full */}
-                <Button
-                  onPress={() => setTrackModalOpen(true)}
-                  color="primary"
-                  isIconOnly
-                  className="sm:hidden rounded-full p-2 shadow-sm hover:shadow-md"
-                  title="Track Order"
-                >
+                </button>
+                <button onClick={() => setTrackModalOpen(true)} className="rounded-full p-2 bg-white/8">
                   <ShoppingBagIcon className="w-5 h-5" />
-                </Button>
-                <Button
-                  onPress={() => setTrackModalOpen(true)}
-                  color="primary"
-                  className="hidden sm:flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl sm:rounded-2xl shadow-sm hover:shadow-md text-sm sm:text-base"
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Search Bar */}
+          <div className="w-full sm:max-w-xl sm:mx-auto sm:mt-0">
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <svg
+                  className="w-5 h-5 text-white/70"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
                 >
-                  <ShoppingBagIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-                  <span className="font-medium hidden lg:inline">Track Order</span>
-                  <span className="font-medium lg:hidden">Track</span>
-                </Button>
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"
+                  />
+                </svg>
               </div>
-            </div>
-
-            {/* Search Bar Row - Full Width on Mobile */}
-            <div className="w-full sm:max-w-xl sm:mx-auto sm:mt-0">
-              <SearchBar query={search} onSearch={setSearch} />
-            </div>
-          </div>
-        </header>
-
-        <Divider className="opacity-30" />
-
-        {/* Hero */}
-        <main className="max-w-7xl mx-auto px-6 py-12">
-          <div className="grid gap-8 grid-cols-1 lg:grid-cols-12 items-center">
-            <div className="lg:col-span-7">
-              <motion.h2 initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="text-4xl sm:text-5xl font-extrabold leading-tight">
-                Materials that speak for your brand
-              </motion.h2>
-              <p className="mt-4 text-lg text-gray-600 dark:text-gray-300 max-w-2xl">
-                High-grade banners, substrates and finishing materials — engineered for longevity and brilliant print results. Explore by sale type or search for a product directly.
-              </p>
-
-            </div>
-
-            <div className="lg:col-span-5">
-              <div className="bg-white/60 dark:bg-white/5 backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-300 border border-white/20 dark:border-white/10 rounded-3xl">
-                <img src="/images/banner/hero-banner.png" alt="Product showcase" className="w-full h-56 object-cover rounded-3xl transition-transform duration-500 hover:scale-[1.04] hover:-rotate-[0.5deg]" />
+              <div className="rounded-full overflow-hidden shadow-md ring-1 ring-white/10 bg-gradient-to-r from-white/5 via-white/3 to-transparent">
+                <SearchBar
+                  query={search}
+                  onSearch={setSearch}
+                  className="!px-12 !py-3 bg-transparent placeholder:text-white/60 text-white"
+                />
               </div>
             </div>
           </div>
+        </div>
+      </header>
 
-          {/* Tabs + Product Grid */}
-          <section className="mt-10">
-            <Tabs selectedKey={activeTab} onSelectionChange={(key) => setActiveTab(key as ProductSaleType)} className="mb-6">
-              {(["roll", "metre", "sheet", "unit"] as const).map((tabKey) => {
-                const prods = productsByType[tabKey];
-                return (
-                  <Tab key={tabKey} title={tabKey.charAt(0).toUpperCase() + tabKey.slice(1)}>
-                    {filteredProducts.length === 0 && search !== "" ? (
-                      <div className="col-span-full grid grid-cols-2 sm:grid-cols-3 gap-6 animate-pulse">
-                        {[...Array(6)].map((_, i) => (
-                          <div key={i} className="h-64 bg-white/40 dark:bg-white/10 rounded-3xl backdrop-blur-md" />
-                        ))}
+      {/* ------------------- HERO ------------------- */}
+      <main className="max-w-7xl mx-auto px-6 py-16 md:py-24">
+        <div className="grid gap-12 grid-cols-1 lg:grid-cols-12 items-center relative">
+          {/* Floating Background Accents */}
+          <div className="absolute -top-20 -left-20 w-72 h-72 bg-gradient-to-br from-pink-500/30 via-sky-400/30 to-indigo-500/30 blur-3xl rounded-full opacity-60 pointer-events-none"></div>
+          <div className="absolute -bottom-10 -right-10 w-72 h-72 bg-gradient-to-tr from-indigo-600/30 via-pink-500/20 to-sky-400/30 blur-3xl rounded-full opacity-50 pointer-events-none"></div>
+
+          {/* Hero Text */}
+          <div className="lg:col-span-7 relative z-10">
+            <motion.h2
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+              className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-pink-500 via-sky-400 to-indigo-400 drop-shadow-[0_4px_12px_rgba(0,0,0,0.25)]"
+            >
+              Premium Materials for
+              <br />
+              Professional Results
+            </motion.h2>
+
+            <motion.p
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2, duration: 0.5 }}
+              className="mt-6 text-lg text-gray-700 dark:text-gray-300 max-w-2xl leading-relaxed"
+            >
+              Explore high‑grade printing substrates, finishing materials, and accessories engineered
+              to elevate your brand. Shop confidently with real‑time inventory, premium quality, and
+              fast Nairobi delivery.
+            </motion.p>
+
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.35, duration: 0.6 }}
+              className="mt-8 flex gap-4 flex-wrap"
+            >
+              <button
+                onClick={() => {
+                  const element = document.getElementById("products-section");
+                  if (element) element.scrollIntoView({ behavior: "smooth" });
+                }}
+                className="px-6 py-3 rounded-2xl shadow-xl bg-gradient-to-r from-pink-600 to-sky-500 text-white font-semibold transform-gpu hover:scale-[1.03] active:scale-95 transition-all duration-300"
+              >
+                Explore Products
+              </button>
+
+              <button
+                onClick={() => setTrackModalOpen(true)}
+                className="px-6 py-3 rounded-2xl border border-white/20 bg-white/10 backdrop-blur-xl text-white font-medium hover:shadow-lg hover:bg-white/20 transition-all duration-300"
+              >
+                Track Your Order
+              </button>
+            </motion.div>
+          </div>
+
+          {/* Hero Image */}
+          <div className="lg:col-span-5 relative z-10">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+              className="bg-white/40 dark:bg-white/5 backdrop-blur-xl shadow-2xl border border-white/30 dark:border-white/10 rounded-3xl overflow-hidden group transform-gpu hover:shadow-[0_20px_60px_rgba(0,0,0,0.3)] hover:scale-[1.02] transition-all duration-500"
+            >
+              <img
+                src="/images/banner/hero-banner.png"
+                alt="Premium product showcase"
+                className="w-full h-64 md:h-80 object-cover rounded-3xl group-hover:scale-[1.05] transition-transform duration-700"
+              />
+              <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/30 to-transparent"></div>
+            </motion.div>
+          </div>
+        </div>
+      </main>
+
+      {/* ------------------- PRODUCTS SECTION ------------------- */}
+      <section id="products-section" className="relative max-w-7xl mx-auto px-6 py-16 md:py-24">
+        {/* Section Header */}
+        <div className="text-center mb-12 md:mb-16">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="inline-block mb-4"
+          >
+            <span className="text-sm font-semibold uppercase tracking-wider text-pink-600 dark:text-pink-400 bg-pink-50 dark:bg-pink-900/20 px-4 py-2 rounded-full">
+              Our Products
+            </span>
+          </motion.div>
+          <motion.h2
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6, delay: 0.1 }}
+            className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-4"
+          >
+            Premium Quality Materials
+          </motion.h2>
+          <motion.p
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6, delay: 0.2 }}
+            className="text-lg text-gray-600 dark:text-gray-300 max-w-2xl mx-auto"
+          >
+            Discover our comprehensive range of professional-grade materials, carefully curated for excellence and reliability
+          </motion.p>
+        </div>
+
+        {/* Tabs Container */}
+        <div className="relative">
+          {/* Decorative Background Elements */}
+          <div className="absolute inset-0 -z-10">
+            <div className="absolute top-0 left-1/4 w-96 h-96 bg-gradient-to-br from-pink-500/10 via-transparent to-sky-500/10 blur-3xl rounded-full"></div>
+            <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-gradient-to-tr from-indigo-500/10 via-transparent to-pink-500/10 blur-3xl rounded-full"></div>
+          </div>
+
+          {/* Professional Tabs */}
+          <Tabs
+            selectedKey={activeTab}
+            onSelectionChange={(key) => setActiveTab(key as any)}
+            className="relative"
+            variant="solid"
+            color="default"
+            radius="lg"
+            classNames={{
+              base: "w-full",
+              tabList:
+                "relative w-full flex gap-2 md:gap-3 overflow-x-auto rounded-2xl px-3 md:px-4 py-4 md:py-5 bg-gradient-to-r from-gray-50 to-gray-100/50 dark:from-gray-800 dark:to-gray-900/50 backdrop-blur-xl border border-gray-200/60 dark:border-gray-700/60 shadow-2xl mb-8",
+              cursor:
+                "hidden",
+              tab:
+                "px-5 md:px-8 py-4 md:py-5 text-sm md:text-base font-semibold rounded-xl transition-all duration-500 ease-out relative overflow-hidden group data-[selected=true]:shadow-xl data-[selected=true]:scale-105 min-h-[60px] md:min-h-[70px] flex items-center justify-center",
+              tabContent: "relative z-10 text-sm md:text-base font-semibold transition-colors duration-300",
+              panel: "pt-4 md:pt-8 min-h-[600px] md:min-h-[800px] transition-all duration-300",
+            }}
+          >
+            {(["roll", "metre", "board", "unit"] as const).map((tabKey) => {
+              const tabProducts = productsByType[tabKey] || [];
+              const tabLabels: Record<typeof tabKey, { label: string; description: string; gradient: string }> = {
+                roll: {
+                  label: "Rolls",
+                  description: "Premium roll materials for large-format printing",
+                  gradient: "from-pink-500 via-rose-500 to-pink-600"
+                },
+                metre: {
+                  label: "Metres",
+                  description: "Flexible materials sold by the metre",
+                  gradient: "from-sky-500 via-blue-500 to-indigo-600"
+                },
+                board: {
+                  label: "Boards",
+                  description: "Rigid substrates and display boards",
+                  gradient: "from-indigo-500 via-purple-500 to-indigo-600"
+                },
+                unit: {
+                  label: "Units",
+                  description: "Individual items and accessories",
+                  gradient: "from-emerald-500 via-teal-500 to-cyan-600"
+                },
+              };
+              const tabInfo = tabLabels[tabKey];
+              const isActive = activeTab === tabKey;
+
+              return (
+                <Tab
+                  key={tabKey}
+                  data-key={tabKey}
+                  title={
+                    <motion.div
+                      className="flex flex-col items-center gap-1 relative z-10"
+                      initial={false}
+                      animate={{
+                        scale: isActive ? 1.05 : 1,
+                      }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <span className={`font-semibold transition-colors duration-300 ${isActive
+                        ? 'text-white'
+                        : 'text-gray-600 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-white'
+                        }`}>
+                        {tabInfo.label}
+                      </span>
+                      <span className={`text-xs font-normal hidden md:block transition-colors duration-300 ${isActive
+                        ? 'text-white/90'
+                        : 'text-gray-400 dark:text-gray-500'
+                        }`}>
+                        {tabProducts.length} {tabProducts.length === 1 ? 'item' : 'items'}
+                      </span>
+                    </motion.div>
+                  }
+                  className="pt-6"
+                >
+                  {/* Category Header */}
+                  <div className="mb-8 pb-6 border-b border-gray-200 dark:border-gray-700">
+                    <h3 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-2">
+                      {tabInfo.label}
+                    </h3>
+                    <p className="text-gray-600 dark:text-gray-400 text-sm md:text-base">
+                      {tabInfo.description}
+                    </p>
+                  </div>
+
+                  {/* Products Grid */}
+                  <div className="min-h-[500px] md:min-h-[700px]">
+                    {tabProducts.length === 0 ? (
+                      <div className="text-center py-16 md:py-24">
+                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-800 mb-4">
+                          <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                          </svg>
+                        </div>
+                        <p className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          No products found in this category
+                        </p>
+                        {apiProducts.length === 0 ? (
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            Loading products...
+                          </p>
+                        ) : (
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            Try adjusting your search or check other categories
+                          </p>
+                        )}
                       </div>
                     ) : (
-                      <motion.div
-                        layout
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, ease: "easeOut" }}
-                        className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3"
-                      >
-                        {prods.length > 0 ? (
-                          prods.map((product) => {
-                            const selectedVariant = getSelectedVariant(product);
-                            const cartId = `${product.id}-${selectedVariant}`;
-                            const cartItem = cart.find((item) => item.id === cartId);
-                            return (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6 md:gap-8 lg:gap-10 w-full">
+                        {tabProducts.map((product, index) => {
+                          const selectedVariant = getSelectedVariant(product);
+                          const variantPrice = getVariantPrice(product, selectedVariant);
+                          const cartItem = cart.find((item) => item.id === `${product.id}-${selectedVariant}`);
+                          return (
+                            <motion.div
+                              key={product.id}
+                              initial={{ opacity: 0, y: 20 }}
+                              whileInView={{ opacity: 1, y: 0 }}
+                              viewport={{ once: true }}
+                              transition={{ duration: 0.4, delay: index * 0.05 }}
+                            >
                               <ProductCard
-                                key={product.id}
                                 id={product.id}
                                 name={product.name}
-                                description={product.description ?? "High quality product."}
                                 image={product.image}
-                                price={getVariantPrice(product, selectedVariant)}
-                                variants={product.variants.map((v) => v.name)}
+                                description={product.description}
+                                price={variantPrice}
+                                variants={product.variants}
                                 selectedVariant={selectedVariant}
                                 onVariantChange={(variant) => handleVariantChange(product.id, variant)}
                                 onAddToCart={() => handleAddToCart(product)}
-                                onIncrease={cartItem ? () => handleIncrease(cartId) : undefined}
-                                onDecrease={cartItem ? () => handleDecrease(cartId) : undefined}
                                 quantity={cartItem?.quantity}
-                                saleType={productSaleType[product.id] ?? "unit"}
+                                onIncrease={() => handleIncrease(`${product.id}-${selectedVariant}`)}
+                                onDecrease={() => handleDecrease(`${product.id}-${selectedVariant}`)}
+                                saleType={product.saleType}
                               />
-                            );
-                          })
-                        ) : (
-                          <p className="col-span-full text-center text-sm text-gray-500 dark:text-gray-400">
-                            No products match your search.
-                          </p>
-                        )}
-                      </motion.div>
+                            </motion.div>
+                          );
+                        })}
+                      </div>
                     )}
-                  </Tab>
-                );
-              })}
-            </Tabs>
-          </section>
-        </main>
+                  </div>
+                </Tab>
+              );
+            })}
+          </Tabs>
+        </div>
+      </section>
 
-        {/* Footer */}
-        <footer className="bg-gradient-to-br from-white/70 to-white/40 dark:from-neutral-900/60 dark:to-neutral-900/40 backdrop-blur-xl py-10 border-t border-white/20 dark:border-white/10">
-          <div className="max-w-7xl mx-auto px-6">
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-6">
+      {/* ------------------- FOOTER ------------------- */}
+      <footer className="relative bg-gradient-to-br from-white/40 via-slate-100/40 to-white/10 dark:from-black/30 dark:via-neutral-900/30 dark:to-black/20 backdrop-blur-2xl border-t border-white/20 dark:border-white/10 py-12 mt-20 shadow-[0_-10px_30px_rgba(0,0,0,0.08)] dark:shadow-[0_-10px_30px_rgba(255,255,255,0.03)]">
+        <div className="absolute -top-10 left-10 w-40 h-40 bg-pink-500/20 blur-[80px] rounded-full pointer-events-none"></div>
+        <div className="absolute bottom-0 right-10 w-40 h-40 bg-sky-500/20 blur-[80px] rounded-full pointer-events-none"></div>
 
-              {/* Company Info */}
-              <div className="text-sm text-gray-700 dark:text-gray-300 tracking-wide">
-                <span className="font-semibold text-sky-700 dark:text-sky-400">
-                  Almon Products Ltd
-                </span>{" "}
-                — © {new Date().getFullYear()}. All rights reserved.
-              </div>
-
-              {/* Links + Accent Color */}
-              <div className="flex gap-6 items-center text-sm font-medium text-gray-600 dark:text-gray-300">
-                <span className="flex items-center gap-1">
-                  <span className="inline-block w-2 h-2 rounded-full bg-pink-500 animate-pulse"></span>
-                  <span className="text-gray-700 dark:text-gray-300">Made with care</span>
-                </span>
-
-                <span className="text-gray-400">|</span>
-
-                <a
-                  className="text-sky-700 dark:text-sky-400 hover:text-sky-600 dark:hover:text-sky-300 underline-offset-4 hover:underline transition-all"
-                  href="#"
-                >
-                  Privacy Policy
-                </a>
-              </div>
-
-            </div>
+        <div className="relative max-w-7xl mx-auto px-6 flex flex-col sm:flex-row justify-between items-center gap-8 z-10">
+          {/* Company Info */}
+          <div className="text-center sm:text-left">
+            <h3 className="text-xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-pink-600 via-sky-500 to-indigo-500">
+              Almon Products Ltd
+            </h3>
+            <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
+              © {new Date().getFullYear()}. All rights reserved.
+            </p>
           </div>
-        </footer>
 
-        {/* Drawers / Modals */}
-        <CartDrawer
-          isOpen={drawerOpen}
-          onClose={() => setDrawerOpen(false)}
-          cartItems={cart}
-          onRemove={(id: string) => setCart((prev) => prev.filter((i) => i.id !== id))}
-          onCheckout={() => {
-            setDrawerOpen(false);
-            setCheckoutOpen(true);
-          }}
-          subtotal={subtotal}
-          deliveryFee={deliveryFee}
-          total={total}
-        />
+          {/* Divider Mobile */}
+          <div className="sm:hidden w-full h-px bg-gradient-to-r from-transparent via-white/30 to-transparent"></div>
 
-        <CheckoutModal
-          isOpen={checkoutOpen}
-          onClose={() => setCheckoutOpen(false)}
-          subtotal={subtotal}
-          deliveryFee={deliveryFee}
-          total={total}
-          deliveryArea={deliveryArea}
-          onDeliveryAreaChange={setDeliveryArea}
-        />
+          {/* Links */}
+          <div className="flex flex-col sm:flex-row items-center gap-6 text-sm font-medium text-gray-700 dark:text-gray-300">
+            <a
+              href="#"
+              className="hover:text-transparent bg-clip-text hover:bg-gradient-to-r hover:from-pink-600 hover:to-sky-400 transition-all duration-300"
+            >
+              Privacy Policy
+            </a>
+            <a
+              href="#"
+              className="hover:text-transparent bg-clip-text hover:bg-gradient-to-r hover:from-pink-600 hover:to-sky-400 transition-all duration-300"
+            >
+              Terms of Service
+            </a>
+            <span className="flex items-center gap-1 text-gray-600 dark:text-gray-400">
+              <span className="inline-flex w-2 h-2 rounded-full bg-pink-500 animate-pulse"></span>
+              Made with care
+            </span>
+          </div>
+        </div>
+      </footer>
 
-        {trackModalOpen && <TrackOrderPopup isOpen={trackModalOpen} onClose={() => setTrackModalOpen(false)} />}
-        {deliveryModalOpen && <DeliveryModal isOpen={deliveryModalOpen} onClose={() => setDeliveryModalOpen(false)} />}
-      </div>
-    </motion.div>
+      {/* Drawers / Modals */}
+      <CartDrawer
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        cartItems={cart}
+        onRemove={(id: string) => setCart((prev) => prev.filter((i) => i.id !== id))}
+        onCheckout={() => {
+          setDrawerOpen(false);
+          setCheckoutOpen(true);
+        }}
+        subtotal={subtotal}
+        deliveryFee={deliveryFee}
+        total={total}
+      />
+
+      <CheckoutModal
+        isOpen={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        subtotal={subtotal}
+        deliveryFee={deliveryFee}
+        total={total}
+        deliveryArea={deliveryArea}
+        onDeliveryAreaChange={setDeliveryArea}
+        cartItems={cart}
+        productSaleType={useApiProducts ? apiProductSaleType : productSaleType}
+        storeId="almon-products"
+      />
+
+      {trackModalOpen && <TrackOrderPopup isOpen={trackModalOpen} onClose={() => setTrackModalOpen(false)} />}
+      {deliveryModalOpen && <DeliveryModal isOpen={deliveryModalOpen} onClose={() => setDeliveryModalOpen(false)} />}
+    </div>
   );
 }

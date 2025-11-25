@@ -11,7 +11,7 @@ import {
   SelectItem,
 } from "@heroui/react";
 import { motion } from "framer-motion";
-import { Plus, Minus } from "lucide-react";
+import { Plus, Minus, ShoppingCart } from "lucide-react";
 
 interface ProductCardProps {
   id: string;
@@ -26,7 +26,7 @@ interface ProductCardProps {
   quantity?: number;
   onIncrease?: () => void;
   onDecrease?: () => void;
-  saleType?: "roll" | "metre" | "sheet" | "unit" | "kg";
+  saleType?: "roll" | "metre" | "board" | "unit" | "kg";
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({
@@ -70,106 +70,118 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   return (
     <motion.div
       key={id}
-      whileHover={{ scale: 1.05 }}
-      className="w-full max-w-sm mx-auto"
+      whileHover={{ scale: 1.03, y: -8 }}
+      transition={{ duration: 0.3, ease: "easeOut" }}
+      className="w-full"
     >
-      <Card className="shadow-xl border-none bg-gradient-to-br from-sky-100 via-white to-pink-100 dark:from-gray-800 dark:to-gray-700">
-        <CardBody className="overflow-visible p-4">
-          <Image
-            shadow="sm"
-            radius="lg"
-            width="100%"
-            alt={name}
-            className="object-cover h-56 w-full"
-            src={image}
-          />
+      <Card className="h-full shadow-xl border border-gray-200/60 dark:border-gray-700/60 bg-white dark:bg-gray-800 hover:shadow-2xl transition-all duration-500 flex flex-col group">
+        <CardBody className="overflow-hidden p-6 md:p-8 flex-1 flex flex-col">
+          <div className="relative w-full aspect-[4/3] mb-6 rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-700 group-hover:scale-105 transition-transform duration-500">
+            <Image
+              shadow="none"
+              radius="lg"
+              width="100%"
+              height="100%"
+              alt={name}
+              className="object-cover w-full h-full"
+              src={image}
+            />
+          </div>
         </CardBody>
 
-        <CardFooter className="flex flex-col items-start gap-2">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-            {name}
-          </h3>
-          <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2">
-            {description}
-          </p>
+        <CardFooter className="flex flex-col items-start gap-4 pt-0 px-6 md:px-8 pb-6 md:pb-8">
+          <div className="w-full">
+            <h3 className="text-lg md:text-xl font-bold text-gray-900 dark:text-white line-clamp-2 leading-tight mb-2">
+              {name}
+            </h3>
+            <p className="text-sm md:text-base text-gray-600 dark:text-gray-400 line-clamp-2">
+              {description}
+            </p>
+          </div>
 
-          {/* Metre selection buttons */}
+          {/* Variant selection - Premium styling */}
           {saleType === "metre" ? (
-            <div className="flex gap-2 mt-2">
+            <div className="flex gap-2 mt-2 flex-wrap">
               {metreOptions.map((m) => {
                 const variantLabel = `${m} Metre`;
                 const selected = selectedVariant === variantLabel;
                 return (
-                  <motion.button
+                  <button
                     key={variantLabel}
-                    whileTap={{ scale: 0.9 }}
                     onClick={() => onVariantChange(variantLabel)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
                       selected
-                        ? "bg-gradient-to-r from-blue-500 to-pink-500 text-white shadow-lg"
-                        : "border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        ? "bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-md"
+                        : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600"
                     }`}
                   >
                     {variantLabel}
-                  </motion.button>
+                  </button>
                 );
               })}
             </div>
-          ) : (
+          ) : variants.length > 1 ? (
             <Select
               aria-label="Select variant"
               selectedKeys={[selectedVariant]}
               onChange={(e) => onVariantChange(e.target.value)}
+              size="md"
               className="w-full mt-2"
+              classNames={{
+                trigger: "h-12 min-h-12",
+                value: "text-base",
+              }}
             >
               {variants.map((v) => (
-                <SelectItem key={v}>{v}</SelectItem>
+                <SelectItem key={v} textValue={v}>{v}</SelectItem>
               ))}
             </Select>
-          )}
+          ) : null}
 
-          {/* Quantity controls */}
-          <div className="flex items-center justify-between w-full mt-3">
+          {/* Price and Quantity - Premium layout */}
+          <div className="flex items-center justify-between w-full mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3">
               <Button
                 isIconOnly
-                radius="full"
-                size="sm"
+                radius="md"
+                size="md"
                 variant="light"
                 onPress={handleDecrease}
                 isDisabled={isControlled ? quantity <= 0 : quantity <= 1}
-                className="hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="min-w-10 h-10 w-10 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
               >
-                <Minus className="w-4 h-4" />
+                <Minus className="w-5 h-5" />
               </Button>
 
-              <span className="text-lg font-semibold text-gray-800 dark:text-gray-200 w-6 text-center">
+              <span className="text-lg font-bold text-gray-800 dark:text-gray-200 w-8 text-center">
                 {quantity}
               </span>
 
               <Button
                 isIconOnly
-                radius="full"
-                size="sm"
+                radius="md"
+                size="md"
                 variant="light"
                 onPress={handleIncrease}
-                className="hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="min-w-10 h-10 w-10 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-5 h-5" />
               </Button>
             </div>
 
             {/* Price display */}
-            <span className="text-lg font-bold text-blue-600 dark:text-blue-300">
+            <span className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">
               KES {(price * quantity).toLocaleString()}
             </span>
           </div>
 
           <Button
-            color="primary"
+            color="default"
             onPress={() => onAddToCart(quantity)}
             radius="lg"
-            className="w-full mt-3 font-semibold"
+            size="lg"
+            className="w-full mt-4 font-bold text-base md:text-lg py-6 bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 transition-all duration-300 shadow-lg hover:shadow-xl"
+            startContent={<ShoppingCart className="w-5 h-5" />}
           >
             Add to Cart
           </Button>
