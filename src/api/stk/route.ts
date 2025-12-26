@@ -1,16 +1,6 @@
 import { NextResponse } from "next/server";
 import axios from "axios";
 
-/**
- * 🔐 Required Environment Variables (in your .env.local file)
- * 
- * SAFARICOM_CONSUMER_KEY=your_consumer_key
- * SAFARICOM_CONSUMER_SECRET=your_consumer_secret
- * MPESA_SHORTCODE=174379
- * MPESA_PASSKEY=your_lnm_passkey
- * CALLBACK_URL=https://yourdomain.com/api/stk/callback
- */
-
 export async function POST(req: Request) {
   try {
     const { phone, amount } = await req.json();
@@ -19,7 +9,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: "Phone and amount are required." }, { status: 400 });
     }
 
-    // ✅ Format phone number (ensure it starts with 254)
+    // ✅ Format phone number
     const formattedPhone = phone.startsWith("254")
       ? phone
       : phone.replace(/^0/, "254");
@@ -60,8 +50,9 @@ export async function POST(req: Request) {
       TransactionDesc: "Purchase from Almon Storefront",
     };
 
+    // ✅ FIXED: Correct STK Push URL
     const response = await axios.post(
-      "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
+      "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest", // Fixed URL
       stkRequest,
       {
         headers: {

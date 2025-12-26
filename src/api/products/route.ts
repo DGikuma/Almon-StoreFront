@@ -132,7 +132,7 @@ export async function GET() {
               name: row.name,
               image_url: row.image_url || "/images/product-placeholder.jpg",
               price: row.price,
-              vat_percentage: row.vat_percentage || 18,
+              vat_percentage: row.vat_percentage || 16,
               base_unit: row.base_unit || "pcs",
               discounts: Array.isArray(row.discounts) ? row.discounts : [],
             };

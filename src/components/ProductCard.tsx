@@ -18,7 +18,7 @@ interface ProductCardProps {
   name: string;
   image: string;
   description: string;
-  price: number;
+  price: number; // Discounted price
   variants: string[];
   selectedVariant: string;
   onVariantChange: (variant: string) => void;
@@ -27,6 +27,9 @@ interface ProductCardProps {
   onIncrease?: () => void;
   onDecrease?: () => void;
   saleType?: "roll" | "metre" | "board" | "unit" | "kg";
+  originalPrice?: number; // Original price before discount
+  hasDiscount?: boolean; // Whether product has active discount
+  vatPercentage?: number; // VAT percentage (default 16%)
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({
@@ -43,6 +46,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   onIncrease,
   onDecrease,
   saleType = "unit",
+  originalPrice,
+  hasDiscount = false,
+  vatPercentage = 16,
 }) => {
   const [uncontrolledQuantity, setUncontrolledQuantity] = useState(1);
   const isControlled = typeof controlledQuantity === "number";
@@ -170,9 +176,34 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             </div>
 
             {/* Price display */}
-            <span className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">
-              KES {(price * quantity).toLocaleString()}
-            </span>
+            <div className="flex flex-col items-end gap-1">
+              {hasDiscount && originalPrice && originalPrice > price ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm line-through text-gray-400 dark:text-gray-500">
+                      KES {(originalPrice * quantity).toLocaleString()}
+                    </span>
+                    <span className="text-xs font-semibold bg-red-500 text-white px-2 py-0.5 rounded">
+                      {Math.round(((originalPrice - price) / originalPrice) * 100)}% OFF
+                    </span>
+                  </div>
+                  <span className="text-xl md:text-2xl font-bold text-green-600 dark:text-green-400">
+                    KES {(price * quantity).toLocaleString()}
+                  </span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    Save: KES {((originalPrice - price) * quantity).toLocaleString()}
+                  </span>
+                </>
+              ) : (
+                <span className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">
+                  KES {(price * quantity).toLocaleString()}
+                </span>
+              )}
+              {/* VAT Display */}
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                VAT ({vatPercentage}%): KES {((price * quantity * vatPercentage) / 100).toLocaleString()}
+              </span>
+            </div>
           </div>
 
           <Button

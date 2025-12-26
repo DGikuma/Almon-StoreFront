@@ -48,7 +48,7 @@ function getDatabaseUrl() {
 getDatabaseUrl();
 
 const app = express();
-const PORT = process.env.API_PORT || 3001;
+const PORT = process.env.API_PORT || 8000;
 
 app.use(cors());
 app.use(express.json());
@@ -160,7 +160,7 @@ async function setupRoutes() {
             description: `Sold per ${saleType.toLowerCase()}.`,
             saleType: saleType,
             baseUnit: row.base_unit || "pcs",
-            vatPercentage: row.vat_percentage || 18,
+            vatPercentage: row.vat_percentage || 16,
             originalPrice: parseFloat(row.price),
             hasDiscount: discounts.some((d) => d.is_active),
           };

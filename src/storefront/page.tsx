@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
+import { Link } from "react-router-dom";
 import { CartDrawer } from "@/components/CartDrawer";
 import { CheckoutModal } from "@/components/CheckoutModal";
 import { CartButton } from "@/components/CartButton";
 import { SearchBar } from "@/components/SearchBar";
 import TrackOrderPopup from "@/components/TrackOrderPopup";
 import DeliveryModal from "@/components/DeliveryModal";
+import CookieConsentBanner from "@/components/CookieConsentBanner";
 import { ProductCard } from "@/components/ProductCard";
 import { motion } from "framer-motion";
 import { Tabs, Tab } from "@heroui/react";
@@ -361,6 +363,9 @@ export default function StorefrontPage() {
   const [trackModalOpen, setTrackModalOpen] = useState(false);
   const [deliveryModalOpen, setDeliveryModalOpen] = useState(false);
   const [deliveryArea, setDeliveryArea] = useState<string>("");
+  const [videoLoaded, setVideoLoaded] = useState(false);
+  const [videoError, setVideoError] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   // Product state from API
   const [apiProducts, setApiProducts] = useState<FrontendProduct[]>([]);
@@ -539,12 +544,17 @@ export default function StorefrontPage() {
   const products = useMemo(() => {
     return apiProducts.map((apiProduct) => ({
       id: apiProduct.id,
+      originalId: (apiProduct as any).originalId || apiProduct.id, // Use originalId if available, fallback to id
       name: apiProduct.name,
       image: apiProduct.image,
       variants: apiProduct.variants.map((v) => v.name),
       description: apiProduct.description || `Sold per ${apiProduct.saleType.toLowerCase()}.`,
       price: apiProduct.price,
       saleType: apiProduct.saleType,
+      originalPrice: apiProduct.originalPrice,
+      hasDiscount: apiProduct.hasDiscount,
+      vatPercentage: apiProduct.vatPercentage,
+      sku: apiProduct.sku,
     }));
   }, [apiProducts]);
 
@@ -605,7 +615,7 @@ export default function StorefrontPage() {
     } else {
       setCart([...cart, {
         id: cartId,
-        productId: product.id,
+        productId: (product as any).originalId || product.id, // Use originalId for API calls, fallback to display id
         name: product.name,
         variant,
         price,
@@ -685,19 +695,127 @@ export default function StorefrontPage() {
               <button
                 onClick={toggle}
                 aria-label="Toggle theme"
-                className="rounded-full p-2 sm:p-3 bg-white/10 hover:bg-white/20 dark:bg-black/20 dark:hover:bg-white/5 ring-1 ring-white/10 backdrop-blur transition-transform active:scale-95 shadow-sm"
+                className="group rounded-full p-2 sm:p-3 bg-white/10 hover:bg-white/20 dark:bg-black/20 dark:hover:bg-white/5 ring-1 ring-white/10 dark:ring-white/20 backdrop-blur transition-all duration-300 active:scale-95 shadow-lg hover:shadow-xl hover:ring-2 hover:ring-white/30 dark:hover:ring-white/40"
               >
                 <motion.div
                   key={theme}
                   initial={{ rotate: -90, scale: 0.8, opacity: 0 }}
                   animate={{ rotate: 0, scale: 1, opacity: 1 }}
                   transition={{ duration: 0.35 }}
+                  className="relative"
                 >
                   {theme === "dark" ? (
-                    <SunIcon className="w-5 h-5 text-yellow-300" />
+                    <motion.div
+                      whileHover={{
+                        rotate: [0, 15, -15, 15, 0],
+                        scale: [1, 1.2, 1.15],
+                      }}
+                      transition={{
+                        duration: 0.6,
+                        type: "spring",
+                        stiffness: 300,
+                        damping: 10,
+                      }}
+                      className="relative"
+                    >
+                      <SunIcon className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-400 dark:text-yellow-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.8)] filter brightness-110 contrast-125 group-hover:drop-shadow-[0_0_12px_rgba(251,191,36,1)] transition-all duration-300" />
+                      {/* Animated rays effect on hover */}
+                      <motion.div
+                        className="absolute inset-0 rounded-full"
+                        animate={{
+                          rotate: [0, 360],
+                        }}
+                        transition={{
+                          duration: 3,
+                          repeat: Infinity,
+                          ease: "linear",
+                        }}
+                        style={{
+                          background: "conic-gradient(from 0deg, transparent 0deg, rgba(251,191,36,0.3) 45deg, transparent 90deg, rgba(251,191,36,0.3) 135deg, transparent 180deg, rgba(251,191,36,0.3) 225deg, transparent 270deg, rgba(251,191,36,0.3) 315deg, transparent 360deg)",
+                          opacity: 0,
+                        }}
+                        whileHover={{
+                          opacity: 1,
+                          scale: 1.5,
+                        }}
+                      />
+                    </motion.div>
                   ) : (
-                    <MoonIcon className="w-5 h-5 text-indigo-300" />
+                    <motion.div
+                      className="relative flex items-center justify-center"
+                      whileHover={{
+                        scale: [1, 1.15, 1.1],
+                      }}
+                      transition={{
+                        duration: 0.5,
+                        type: "spring",
+                        stiffness: 400,
+                        damping: 12,
+                      }}
+                    >
+                      {/* Black background circle for moon icon in light mode */}
+                      <motion.div
+                        className="absolute -inset-2 bg-black dark:bg-transparent rounded-full w-8 h-8 sm:w-10 sm:h-10"
+                        whileHover={{
+                          scale: [1, 1.1, 1.05],
+                          rotate: [0, 5, -5, 0],
+                        }}
+                        transition={{
+                          duration: 0.5,
+                          type: "spring",
+                        }}
+                      />
+                      <motion.div
+                        whileHover={{
+                          rotate: [0, -15, 15, -15, 0],
+                          y: [0, -2, 0],
+                        }}
+                        transition={{
+                          duration: 0.6,
+                          type: "spring",
+                          stiffness: 300,
+                          damping: 10,
+                        }}
+                        className="relative z-10"
+                      >
+                        <MoonIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white dark:text-indigo-300 drop-shadow-[0_0_8px_rgba(99,102,241,0.8)] filter brightness-110 contrast-125 group-hover:drop-shadow-[0_0_12px_rgba(99,102,241,1)] transition-all duration-300" />
+                      </motion.div>
+                      {/* Stars effect on hover for moon */}
+                      <motion.div
+                        className="absolute inset-0 z-0"
+                        initial={{ opacity: 0 }}
+                        whileHover={{
+                          opacity: [0, 1, 0.8],
+                        }}
+                        transition={{
+                          duration: 0.8,
+                          repeat: Infinity,
+                          repeatType: "reverse",
+                        }}
+                      >
+                        <div className="absolute top-0 left-1/2 w-1 h-1 bg-white rounded-full blur-sm" />
+                        <div className="absolute top-1/4 right-0 w-0.5 h-0.5 bg-white rounded-full blur-sm" />
+                        <div className="absolute bottom-1/4 left-0 w-0.5 h-0.5 bg-white rounded-full blur-sm" />
+                      </motion.div>
+                    </motion.div>
                   )}
+                  {/* Enhanced Glow effect */}
+                  <motion.div
+                    className={`absolute inset-0 rounded-full blur-md transition-opacity ${theme === "dark"
+                      ? "bg-yellow-400/50 dark:bg-yellow-300/50"
+                      : "bg-indigo-400/50 dark:bg-indigo-300/50"
+                      }`}
+                    initial={{ opacity: 0.4 }}
+                    whileHover={{
+                      opacity: [0.6, 1, 0.8],
+                      scale: [1, 1.2, 1.1],
+                    }}
+                    transition={{
+                      duration: 1,
+                      repeat: Infinity,
+                      repeatType: "reverse",
+                    }}
+                  />
                 </motion.div>
               </button>
 
@@ -787,80 +905,344 @@ export default function StorefrontPage() {
         </div>
       </header>
 
-      {/* ------------------- HERO ------------------- */}
-      <main className="max-w-7xl mx-auto px-6 py-16 md:py-24">
-        <div className="grid gap-12 grid-cols-1 lg:grid-cols-12 items-center relative">
-          {/* Floating Background Accents */}
-          <div className="absolute -top-20 -left-20 w-72 h-72 bg-gradient-to-br from-pink-500/30 via-sky-400/30 to-indigo-500/30 blur-3xl rounded-full opacity-60 pointer-events-none"></div>
-          <div className="absolute -bottom-10 -right-10 w-72 h-72 bg-gradient-to-tr from-indigo-600/30 via-pink-500/20 to-sky-400/30 blur-3xl rounded-full opacity-50 pointer-events-none"></div>
+      {/* ------------------- HERO BANNER ------------------- */}
+      <section className="relative w-full min-h-[85vh] md:min-h-[90vh] flex items-center justify-center overflow-hidden">
+        {/* Animated Video/Image Background */}
+        <div className="absolute inset-0 w-full h-full">
+          {/* Video Background */}
+          <video
+            ref={videoRef}
+            autoPlay
+            loop
+            muted
+            playsInline
+            preload="auto"
+            className={`absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-1000 ${videoLoaded ? 'opacity-100' : 'opacity-0'}`}
+            poster="/images/banner/hero-banner.png"
+            onLoadedData={() => {
+              setVideoLoaded(true);
+              setVideoError(false);
+              // Force play in case autoplay didn't work
+              if (videoRef.current) {
+                videoRef.current.play().catch((err) => {
+                  console.log("Video autoplay prevented:", err);
+                });
+              }
+            }}
+            onError={(e) => {
+              console.error("Video loading error:", e);
+              setVideoError(true);
+              setVideoLoaded(false);
+            }}
+            onCanPlay={() => {
+              setVideoLoaded(true);
+            }}
+            onLoadedMetadata={() => {
+              setVideoLoaded(true);
+            }}
+          >
+            <source src="/videos/hero-banner.mp4" type="video/mp4" />
+            <source src="/videos/hero-banner.webm" type="video/webm" />
+            Your browser does not support the video tag.
+          </video>
 
-          {/* Hero Text */}
-          <div className="lg:col-span-7 relative z-10">
-            <motion.h2
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6 }}
-              className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-pink-500 via-sky-400 to-indigo-400 drop-shadow-[0_4px_12px_rgba(0,0,0,0.25)]"
-            >
-              Premium Materials for
-              <br />
-              Professional Results
-            </motion.h2>
-
-            <motion.p
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2, duration: 0.5 }}
-              className="mt-6 text-lg text-gray-700 dark:text-gray-300 max-w-2xl leading-relaxed"
-            >
-              Explore high‑grade printing substrates, finishing materials, and accessories engineered
-              to elevate your brand. Shop confidently with real‑time inventory, premium quality, and
-              fast Nairobi delivery.
-            </motion.p>
-
+          {/* Fallback Image Background with Animation - Only show if video fails */}
+          {(!videoLoaded || videoError) && (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.35, duration: 0.6 }}
-              className="mt-8 flex gap-4 flex-wrap"
-            >
-              <button
-                onClick={() => {
-                  const element = document.getElementById("products-section");
-                  if (element) element.scrollIntoView({ behavior: "smooth" });
-                }}
-                className="px-6 py-3 rounded-2xl shadow-xl bg-gradient-to-r from-pink-600 to-sky-500 text-white font-semibold transform-gpu hover:scale-[1.03] active:scale-95 transition-all duration-300"
-              >
-                Explore Products
-              </button>
+              className="absolute inset-0 w-full h-full bg-cover bg-center bg-no-repeat z-0"
+              style={{
+                backgroundImage: "url('/images/banner/hero-banner.png')",
+              }}
+              initial={{ opacity: 0 }}
+              animate={{
+                opacity: 1,
+                scale: [1, 1.05, 1],
+              }}
+              transition={{
+                opacity: { duration: 0.5 },
+                scale: {
+                  duration: 20,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }
+              }}
+            />
+          )}
 
-              <button
-                onClick={() => setTrackModalOpen(true)}
-                className="px-6 py-3 rounded-2xl border border-white/20 bg-white/10 backdrop-blur-xl text-white font-medium hover:shadow-lg hover:bg-white/20 transition-all duration-300"
-              >
-                Track Your Order
-              </button>
-            </motion.div>
-          </div>
+          {/* Animated Gradient Overlays for Depth */}
+          <motion.div
+            className="absolute inset-0 bg-gradient-to-br from-pink-600/40 via-sky-500/30 to-indigo-700/40"
+            animate={{
+              opacity: [0.4, 0.6, 0.4],
+            }}
+            transition={{
+              duration: 8,
+              repeat: Infinity,
+              ease: "easeInOut",
+            }}
+          />
 
-          {/* Hero Image */}
-          <div className="lg:col-span-5 relative z-10">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.6, ease: "easeOut" }}
-              className="bg-white/40 dark:bg-white/5 backdrop-blur-xl shadow-2xl border border-white/30 dark:border-white/10 rounded-3xl overflow-hidden group transform-gpu hover:shadow-[0_20px_60px_rgba(0,0,0,0.3)] hover:scale-[1.02] transition-all duration-500"
-            >
-              <img
-                src="/images/banner/hero-banner.png"
-                alt="Premium product showcase"
-                className="w-full h-64 md:h-80 object-cover rounded-3xl group-hover:scale-[1.05] transition-transform duration-700"
-              />
-              <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/30 to-transparent"></div>
-            </motion.div>
+          {/* Animated Mesh Gradient Overlay */}
+          <motion.div
+            className="absolute inset-0 opacity-30"
+            style={{
+              background: `
+                radial-gradient(circle at 20% 50%, rgba(236, 72, 153, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(6, 182, 212, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 40% 20%, rgba(139, 92, 246, 0.2) 0%, transparent 50%)
+              `,
+            }}
+            animate={{
+              backgroundPosition: ['0% 0%', '100% 100%', '0% 0%'],
+            }}
+            transition={{
+              duration: 15,
+              repeat: Infinity,
+              ease: "linear",
+            }}
+          />
+
+          {/* Dark Overlay for Text Readability */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/70 dark:from-black/70 dark:via-black/60 dark:to-black/80" />
+
+          {/* Animated Light Rays */}
+          <motion.div
+            className="absolute inset-0 opacity-20"
+            style={{
+              background: "linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.1) 50%, transparent 70%)",
+              backgroundSize: "200% 200%",
+            }}
+            animate={{
+              backgroundPosition: ['0% 0%', '100% 100%'],
+            }}
+            transition={{
+              duration: 10,
+              repeat: Infinity,
+              ease: "linear",
+            }}
+          />
+
+          {/* Grid Pattern Overlay */}
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff08_1px,transparent_1px),linear-gradient(to_bottom,#ffffff08_1px,transparent_1px)] bg-[size:60px_60px] opacity-30" />
+        </div>
+
+        {/* Content Container */}
+        <div className="relative z-10 w-full max-w-7xl mx-auto px-6 py-16 md:py-24">
+          <div className="grid gap-12 grid-cols-1 lg:grid-cols-12 items-center">
+            {/* Hero Text */}
+            <div className="lg:col-span-7 relative z-10">
+              <motion.h2
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8, ease: "easeOut" }}
+                className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold tracking-tight text-white drop-shadow-[0_4px_20px_rgba(0,0,0,0.5)]"
+              >
+                <span className="bg-clip-text text-transparent bg-gradient-to-r from-pink-300 via-white to-sky-300">
+                  Premium Materials for
+                </span>
+                <br />
+                <span className="bg-clip-text text-transparent bg-gradient-to-r from-sky-300 via-white to-indigo-300">
+                  Professional Results
+                </span>
+              </motion.h2>
+
+              <motion.p
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2, duration: 0.6 }}
+                className="mt-6 text-lg md:text-xl text-white/90 max-w-2xl leading-relaxed drop-shadow-[0_2px_10px_rgba(0,0,0,0.5)] font-light"
+              >
+                Explore high‑grade printing substrates, finishing materials, and accessories engineered
+                to elevate your brand. Shop confidently with real‑time inventory, premium quality, and
+                fast Nairobi delivery.
+              </motion.p>
+
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.35, duration: 0.6 }}
+                className="mt-8 flex gap-4 flex-wrap"
+              >
+                <button
+                  onClick={() => {
+                    const element = document.getElementById("products-section");
+                    if (element) element.scrollIntoView({ behavior: "smooth" });
+                  }}
+                  className="px-6 py-3 rounded-2xl shadow-2xl bg-gradient-to-r from-pink-600 to-sky-500 text-white font-semibold transform-gpu hover:scale-[1.03] active:scale-95 transition-all duration-300 border border-white/20 backdrop-blur-sm"
+                >
+                  Explore Products
+                </button>
+
+                <motion.button
+                  onClick={() => setTrackModalOpen(true)}
+                  whileHover={{ scale: 1.08, y: -2 }}
+                  whileTap={{ scale: 0.95 }}
+                  className="group relative px-8 py-4 rounded-2xl overflow-hidden font-black text-white shadow-2xl transition-all duration-500 border-2 border-white/30 hover:border-white/50 backdrop-blur-sm"
+                  style={{
+                    background: 'linear-gradient(135deg, #ec4899 0%, #06b6d4 50%, #8b5cf6 100%)',
+                    backgroundSize: '200% 200%',
+                    boxShadow: '0 10px 40px rgba(236, 72, 153, 0.6), 0 0 20px rgba(6, 182, 212, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3)',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundPosition = '100% 0%';
+                    e.currentTarget.style.boxShadow = '0 15px 50px rgba(236, 72, 153, 0.8), 0 0 30px rgba(139, 92, 246, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.4)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundPosition = '0% 0%';
+                    e.currentTarget.style.boxShadow = '0 10px 40px rgba(236, 72, 153, 0.6), 0 0 20px rgba(6, 182, 212, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3)';
+                  }}
+                >
+                  {/* Static Background Gradient */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-pink-600 via-cyan-500 to-purple-600" />
+
+                  {/* Shimmer Effect - Only on Hover */}
+                  <motion.div
+                    className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent opacity-0 group-hover:opacity-100"
+                    initial={{ x: '-100%' }}
+                    whileHover={{
+                      x: '200%',
+                      transition: {
+                        duration: 0.8,
+                        ease: "easeInOut",
+                      }
+                    }}
+                  />
+
+                  {/* Static Glow */}
+                  <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-pink-500/50 via-cyan-500/50 to-purple-500/50 blur-2xl" />
+
+                  {/* Content */}
+                  <span className="relative z-10 flex items-center gap-3">
+                    <motion.div
+                      whileHover={{
+                        rotate: [0, -15, 15, -15, 0],
+                        scale: [1, 1.4, 1.3],
+                        y: [0, -4, 0]
+                      }}
+                      transition={{
+                        duration: 0.6,
+                        type: "spring",
+                        stiffness: 400,
+                        damping: 10
+                      }}
+                      className="relative"
+                    >
+                      <ShoppingBagIcon className="w-7 h-7 drop-shadow-lg filter brightness-110" />
+                      {/* Icon Glow - Only on Hover */}
+                      <motion.div
+                        className="absolute inset-0 bg-white/60 blur-lg rounded-full -z-10 opacity-0 group-hover:opacity-100"
+                        whileHover={{
+                          opacity: [0.4, 0.8, 0.4],
+                          scale: [1, 1.3, 1],
+                          transition: {
+                            duration: 1,
+                            repeat: Infinity,
+                            ease: "easeInOut",
+                          }
+                        }}
+                      />
+                    </motion.div>
+                    <span className="text-lg font-black tracking-wide drop-shadow-lg">Track Your Order</span>
+                  </span>
+
+                  {/* Hover Glow Effect */}
+                  <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-pink-400/90 via-cyan-400/90 to-purple-400/90 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                </motion.button>
+              </motion.div>
+            </div>
+
+            {/* Hero Image/Visual Element */}
+            <div className="lg:col-span-5 relative z-10">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, x: 20 }}
+                animate={{ opacity: 1, scale: 1, x: 0 }}
+                transition={{ duration: 0.8, ease: "easeOut", delay: 0.3 }}
+                className="relative"
+              >
+                {/* Floating Product Showcase */}
+                <div className="relative bg-white/10 dark:bg-white/5 backdrop-blur-2xl shadow-2xl border border-white/20 rounded-3xl overflow-hidden group transform-gpu hover:shadow-[0_25px_70px_rgba(0,0,0,0.5)] transition-all duration-500">
+                  {/* Gradient Overlay */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+
+                  {/* Animated Border Glow */}
+                  <motion.div
+                    className="absolute inset-0 rounded-3xl"
+                    style={{
+                      boxShadow: 'inset 0 0 60px rgba(255, 255, 255, 0.1)',
+                    }}
+                    animate={{
+                      boxShadow: [
+                        'inset 0 0 60px rgba(255, 255, 255, 0.1)',
+                        'inset 0 0 80px rgba(236, 72, 153, 0.2)',
+                        'inset 0 0 60px rgba(255, 255, 255, 0.1)',
+                      ],
+                    }}
+                    transition={{
+                      duration: 4,
+                      repeat: Infinity,
+                      ease: "easeInOut",
+                    }}
+                  />
+                </div>
+
+                {/* Floating Accent Elements */}
+                <motion.div
+                  className="absolute -top-4 -right-4 w-20 h-20 bg-gradient-to-br from-pink-500/30 to-sky-500/30 rounded-full blur-2xl"
+                  animate={{
+                    scale: [1, 1.2, 1],
+                    opacity: [0.5, 0.8, 0.5],
+                  }}
+                  transition={{
+                    duration: 3,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                  }}
+                />
+                <motion.div
+                  className="absolute -bottom-4 -left-4 w-16 h-16 bg-gradient-to-br from-indigo-500/30 to-purple-500/30 rounded-full blur-xl"
+                  animate={{
+                    scale: [1, 1.3, 1],
+                    opacity: [0.4, 0.7, 0.4],
+                  }}
+                  transition={{
+                    duration: 4,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                    delay: 0.5,
+                  }}
+                />
+              </motion.div>
+            </div>
           </div>
         </div>
-      </main>
+
+        {/* Scroll Indicator */}
+        <motion.div
+          className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-10"
+          animate={{
+            y: [0, 10, 0],
+          }}
+          transition={{
+            duration: 2,
+            repeat: Infinity,
+            ease: "easeInOut",
+          }}
+        >
+          <div className="w-6 h-10 rounded-full border-2 border-white/50 flex items-start justify-center p-2">
+            <motion.div
+              className="w-1.5 h-1.5 rounded-full bg-white/70"
+              animate={{
+                y: [0, 12, 0],
+              }}
+              transition={{
+                duration: 2,
+                repeat: Infinity,
+                ease: "easeInOut",
+              }}
+            />
+          </div>
+        </motion.div>
+      </section>
 
       {/* ------------------- PRODUCTS SECTION ------------------- */}
       <section id="products-section" className="relative max-w-7xl mx-auto px-6 py-16 md:py-24">
@@ -1021,7 +1403,7 @@ export default function StorefrontPage() {
                           const cartItem = cart.find((item) => item.id === `${product.id}-${selectedVariant}`);
                           return (
                             <motion.div
-                              key={product.id}
+                              key={`${product.id}-${product.sku || index}`}
                               initial={{ opacity: 0, y: 20 }}
                               whileInView={{ opacity: 1, y: 0 }}
                               viewport={{ once: true }}
@@ -1041,6 +1423,9 @@ export default function StorefrontPage() {
                                 onIncrease={() => handleIncrease(`${product.id}-${selectedVariant}`)}
                                 onDecrease={() => handleDecrease(`${product.id}-${selectedVariant}`)}
                                 saleType={product.saleType}
+                                originalPrice={product.originalPrice}
+                                hasDiscount={product.hasDiscount}
+                                vatPercentage={product.vatPercentage || 16}
                               />
                             </motion.div>
                           );
@@ -1076,18 +1461,18 @@ export default function StorefrontPage() {
 
           {/* Links */}
           <div className="flex flex-col sm:flex-row items-center gap-6 text-sm font-medium text-gray-700 dark:text-gray-300">
-            <a
-              href="#"
+            <Link
+              to="/privacy-policy"
               className="hover:text-transparent bg-clip-text hover:bg-gradient-to-r hover:from-pink-600 hover:to-sky-400 transition-all duration-300"
             >
               Privacy Policy
-            </a>
-            <a
-              href="#"
+            </Link>
+            <Link
+              to="/terms-of-service"
               className="hover:text-transparent bg-clip-text hover:bg-gradient-to-r hover:from-pink-600 hover:to-sky-400 transition-all duration-300"
             >
               Terms of Service
-            </a>
+            </Link>
             <span className="flex items-center gap-1 text-gray-600 dark:text-gray-400">
               <span className="inline-flex w-2 h-2 rounded-full bg-pink-500 animate-pulse"></span>
               Made with care
@@ -1121,11 +1506,14 @@ export default function StorefrontPage() {
         onDeliveryAreaChange={setDeliveryArea}
         cartItems={cart}
         productSaleType={useApiProducts ? apiProductSaleType : productSaleType}
-        storeId="almon-products"
+        storeId="STR251100001"
       />
 
       {trackModalOpen && <TrackOrderPopup isOpen={trackModalOpen} onClose={() => setTrackModalOpen(false)} />}
       {deliveryModalOpen && <DeliveryModal isOpen={deliveryModalOpen} onClose={() => setDeliveryModalOpen(false)} />}
+
+      {/* Cookie Consent Banner */}
+      <CookieConsentBanner />
     </div>
   );
 }

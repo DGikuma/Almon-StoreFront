@@ -9,11 +9,24 @@ export default defineConfig({
   server: {
     host: true, // exposes to your local network
     port: 5173, // or any port you prefer
-        proxy: {
-          // Proxy API calls to avoid CORS and handle API routes
-          '/api': {
-            target: 'http://localhost:3001',
-            changeOrigin: true,
+    proxy: {
+      // Proxy API calls to avoid CORS and handle API routes
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        configure: (proxy, _options) => {
+          proxy.on('error', (err, _req, _res) => {
+            console.log('proxy error', err);
+          });
+          proxy.on('proxyReq', (proxyReq, req, _res) => {
+            console.log('Proxying:', req.method, req.url);
+          });
+        },
+      },
+      // Proxy customer endpoints
+      '/customer': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
         configure: (proxy, _options) => {
           proxy.on('error', (err, _req, _res) => {
             console.log('proxy error', err);

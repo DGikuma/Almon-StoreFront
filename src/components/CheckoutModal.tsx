@@ -57,19 +57,19 @@ interface CheckoutModalProps {
   onOrderSubmit?: (orderData: any) => Promise<{ sale_id?: string } | void>;
 }
 
-// Map variant names to API unit format
+// Map variant names to API unit format (NestJS expects: pcs, meter, roll)
 const mapVariantToUnit = (variant: string, saleType: "roll" | "metre" | "board" | "unit"): string => {
   const variantLower = variant.toLowerCase();
   if (variantLower.includes("roll")) return "roll";
-  if (variantLower.includes("metre")) return "metre";
-  if (variantLower.includes("board")) return "board";
-  if (variantLower.includes("unit")) return "pcs";
-  
-  // Fallback to sale type
+  if (variantLower.includes("metre") || variantLower.includes("meter")) return "meter";
+  if (variantLower.includes("board") || variantLower.includes("sheet")) return "pcs";
+  if (variantLower.includes("unit") || variantLower.includes("pcs")) return "pcs";
+
+  // Fallback to sale type - map to NestJS expected values
   switch (saleType) {
     case "roll": return "roll";
-    case "metre": return "metre";
-    case "board": return "board";
+    case "metre": return "meter"; // Note: NestJS uses "meter" not "metre"
+    case "board": return "pcs"; // Board/sheet maps to pcs
     case "unit": return "pcs";
     default: return "pcs";
   }
@@ -81,25 +81,43 @@ const extractProductId = (cartItemId: string, variant: string): string => {
   // Remove the variant suffix from the cart item ID
   const variantLower = variant.toLowerCase();
   const idLower = cartItemId.toLowerCase();
-  
+
   // Try to find and remove the variant at the end
   if (idLower.endsWith(`-${variantLower}`)) {
     return cartItemId.slice(0, -(variantLower.length + 1)); // +1 for the hyphen
   }
-  
+
   // Fallback: split by last occurrence of variant
   const lastIndex = idLower.lastIndexOf(`-${variantLower}`);
   if (lastIndex !== -1) {
     return cartItemId.slice(0, lastIndex);
   }
-  
+
   // If all else fails, return as is (shouldn't happen in normal flow)
   return cartItemId;
 };
 
-export const CheckoutModal: React.FC<CheckoutModalProps> = ({ 
-  isOpen, 
-  onClose, 
+// Helper function to ensure sale_id starts with "SAL"
+const normalizeSaleId = (saleId: string | null | undefined): string | null => {
+  if (!saleId) return null;
+
+  // If already starts with SAL, return as is
+  if (saleId.toUpperCase().startsWith('SAL')) {
+    return saleId.toUpperCase();
+  }
+
+  // If it's a numeric ID, add SAL prefix
+  if (/^\d+$/.test(saleId)) {
+    return `SAL${saleId.padStart(6, '0')}`; // Format: SAL000001, SAL000002, etc.
+  }
+
+  // Otherwise, just add SAL prefix
+  return `SAL${saleId}`;
+};
+
+export const CheckoutModal: React.FC<CheckoutModalProps> = ({
+  isOpen,
+  onClose,
   subtotal,
   deliveryFee,
   total,
@@ -116,36 +134,46 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [recipientPhone, setRecipientPhone] = useState("");
   const [recipientEmail, setRecipientEmail] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("mpesa");
+  const [paymentMethod] = useState("mpesa"); // Fixed to M-Pesa only
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
 
   const formatOrderData = () => {
     const products = cartItems.map((item) => {
       // Use productId if available, otherwise extract from id
-      const productId = item.productId || extractProductId(item.id, item.variant);
+      // Backend expects uppercase product IDs like "PRD251100003"
+      let productId = item.productId || extractProductId(item.id, item.variant);
+      // Ensure product ID is uppercase (backend uses uppercase SKUs)
+      if (productId && typeof productId === 'string') {
+        productId = productId.toUpperCase();
+      }
       const saleType = productSaleType[productId] || "unit";
       const unit = mapVariantToUnit(item.variant, saleType);
-      
+
       return {
         product_id: productId,
         quantity: item.quantity,
-        unit: unit,
+        unit: unit, // NestJS expects lowercase "unit" with values: pcs, meter, roll
       };
     });
 
+    // Build order payload - store_id is required by backend
+    // Note: You may need to update the storeId prop with the correct store ID from your backend
     return {
-      store_id: storeId,
+      store_id: storeId || "almon-products", // Backend requires this, update with correct value
       products: products,
       delivery: {
         recipient_name: recipientName,
         recipient_phone: recipientPhone,
-        recipient_email: recipientEmail,
+        recipient_email: recipientEmail || "",
         delivery_address: deliveryAddress,
       },
       payment_method: paymentMethod,
       phone_number: phoneNumber,
       customer_name: customerName,
+      delivery_area: deliveryArea, // Make sure to include delivery area
+      delivery_fee: deliveryFee, // Include delivery fee
+      total_amount: total, // Include total amount
     };
   };
 
@@ -173,22 +201,38 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         const result = await onOrderSubmit(orderData);
         // If custom handler returns sale_id, use it
         if (result && typeof result === 'object' && 'sale_id' in result) {
-          saleId = result.sale_id as string;
+          saleId = normalizeSaleId(result.sale_id as string);
         }
         setStatus("Order submitted successfully!");
       } else {
-        // Submit to default API endpoint
-        const orderRes = await axios.post("/api/orders", orderData);
-        saleId = orderRes.data?.sale_id || null;
-        setStatus("Order submitted successfully!");
+        // Submit to NestJS backend endpoint
+        console.log("Submitting order:", JSON.stringify(orderData, null, 2)); // Debug log
+        try {
+          const orderRes = await axios.post("/customer/orders", orderData);
+
+          // Extract and normalize sale_id from response
+          const rawSaleId = orderRes.data?.sale_id || orderRes.data?.id || orderRes.data?.order_id || null;
+          saleId = normalizeSaleId(rawSaleId);
+
+          setStatus("Order submitted successfully!");
+        } catch (orderError: any) {
+          // Log detailed error for debugging
+          console.error("Order submission error details:", orderError.response?.data);
+          if (orderError.response?.data?.message && Array.isArray(orderError.response.data.message)) {
+            const errorMessages = orderError.response.data.message.join(", ");
+            throw new Error(errorMessages);
+          }
+          throw orderError;
+        }
       }
 
       // Step 2: Process payment with sale_id
       if (saleId) {
         try {
-          const paymentRes = await axios.post("/api/payment", {
-            sale_id: saleId,
+          // Update the payment endpoint to use the correct format
+          const paymentRes = await axios.post(`localhost:8000/api/customer/order/${saleId}/pay`, {
             payment_method: paymentMethod,
+            amount: total,
           });
 
           const paymentMessage = paymentRes.data?.message || "Payment processed successfully";
@@ -197,22 +241,68 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           // If payment method is M-Pesa, also initiate STK push
           if (paymentMethod === "mpesa") {
             try {
-              const stkRes = await axios.post("/api/stk", { phone: phoneNumber, amount: total });
+              // Ensure phone number has correct format (254XXXXXXXXX)
+              const formattedPhone = phoneNumber.startsWith('0')
+                ? `254${phoneNumber.substring(1)}`
+                : phoneNumber.startsWith('+254')
+                  ? phoneNumber.substring(1)
+                  : phoneNumber;
+
+              const stkRes = await axios.post("/api/stk", {
+                phone: formattedPhone,
+                amount: total,
+                sale_id: saleId,
+                account_reference: saleId
+              });
+
               const stkMessage = (stkRes.data as { message?: string } | undefined)?.message;
               setStatus((prev) => prev + " " + (stkMessage ?? "Payment initiated. Check your phone."));
             } catch (error: any) {
+              console.error("STK push error:", error.response?.data || error.message);
               setStatus((prev) => prev + " STK push failed. Please contact support.");
             }
           }
         } catch (error: any) {
+          console.error("Payment error:", error.response?.data || error.message);
           setStatus((prev) => prev + " Payment processing failed. Please contact support.");
-          console.error("Payment error:", error);
         }
       } else {
+        console.warn("No sale ID received from order submission");
         setStatus((prev) => prev + " Warning: Sale ID not received. Please contact support.");
       }
+
+      // If everything was successful, show success message and close modal after delay
+      if (!status.includes("failed") && !status.includes("Warning")) {
+        setTimeout(() => {
+          onClose();
+          // Reset form
+          setCustomerName("");
+          setPhoneNumber("");
+          setRecipientName("");
+          setRecipientPhone("");
+          setRecipientEmail("");
+          setDeliveryAddress("");
+          setStatus("");
+        }, 3000);
+      }
     } catch (error: any) {
-      setStatus(error.response?.data?.message || "Order submission failed. Please try again.");
+      console.error("Order submission error:", error.response?.data || error.message);
+
+      // Handle validation errors array
+      let errorMessage = "Order submission failed. Please try again.";
+      if (error.response?.data?.message) {
+        if (Array.isArray(error.response.data.message)) {
+          errorMessage = error.response.data.message.join(", ");
+        } else {
+          errorMessage = error.response.data.message;
+        }
+      } else if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      setStatus(`Error: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -260,6 +350,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               value={phoneNumber}
               onChange={(e) => setPhoneNumber(e.target.value)}
               isRequired
+              description="For M-Pesa payment and delivery updates"
             />
           </div>
 
@@ -278,7 +369,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               isRequired
             >
               {Object.keys(deliveryAreas).map((area) => (
-                <SelectItem key={area}>
+                <SelectItem key={area} textValue={`${formatAreaName(area)} - KES ${deliveryAreas[area].toLocaleString()}`}>
                   {formatAreaName(area)} - KES {deliveryAreas[area].toLocaleString()}
                 </SelectItem>
               ))}
@@ -307,7 +398,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             />
             <Textarea
               label="Delivery Address"
-              placeholder="Enter complete delivery address"
+              placeholder="Enter complete delivery address (Building, Street, Landmark)"
               value={deliveryAddress}
               onChange={(e) => setDeliveryAddress(e.target.value)}
               isRequired
@@ -315,25 +406,23 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             />
           </div>
 
-          {/* Payment Method */}
-          <Select
-            label="Payment Method"
-            selectedKeys={paymentMethod ? [paymentMethod] : []}
-            onSelectionChange={(keys) => {
-              const selected = Array.from(keys)[0] as string;
-              setPaymentMethod(selected || "mpesa");
-            }}
-            className="w-full"
-          >
-            <SelectItem key="mpesa">M-Pesa</SelectItem>
-            <SelectItem key="bank">Bank Transfer</SelectItem>
-          </Select>
+          {/* Payment Method - Fixed to M-Pesa */}
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">
+              Payment Method: M-Pesa
+            </p>
+            <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+              You will receive an M-Pesa STK push notification to complete payment
+            </p>
+            <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+              Order Reference: {`SAL${Date.now().toString().slice(-6)}`}
+            </p>
+          </div>
 
           {status && (
             <p
-              className={`text-sm ${
-                status.includes("failed") || status.includes("Please") ? "text-red-500" : "text-green-600"
-              }`}
+              className={`text-sm ${status.includes("failed") || status.includes("Error") || status.includes("Please") ? "text-red-500" : "text-green-600"
+                }`}
             >
               {status}
             </p>
