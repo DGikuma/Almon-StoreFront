@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
-    const { choice, email, phone, customerId } = await req.json();
+    const { choice } = await req.json();
 
     if (!choice || (choice !== "accept" && choice !== "decline")) {
       return NextResponse.json(

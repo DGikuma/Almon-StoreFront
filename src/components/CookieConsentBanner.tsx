@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@heroui/react";
 import { Link } from "react-router-dom";
 import {
-  ShieldCheckIcon,
   EnvelopeIcon,
   XMarkIcon,
   CheckCircleIcon,
@@ -16,11 +15,11 @@ import {
 // Cookie Icon SVG Component
 const CookieIcon = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" strokeLinecap="round" strokeLinejoin="round"/>
-    <circle cx="8.5" cy="8.5" r="1" fill="currentColor"/>
-    <circle cx="15.5" cy="8.5" r="1" fill="currentColor"/>
-    <circle cx="8.5" cy="15.5" r="1" fill="currentColor"/>
-    <circle cx="12" cy="12" r="0.5" fill="currentColor"/>
+    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" strokeLinecap="round" strokeLinejoin="round" />
+    <circle cx="8.5" cy="8.5" r="1" fill="currentColor" />
+    <circle cx="15.5" cy="8.5" r="1" fill="currentColor" />
+    <circle cx="8.5" cy="15.5" r="1" fill="currentColor" />
+    <circle cx="12" cy="12" r="0.5" fill="currentColor" />
   </svg>
 );
 
@@ -63,14 +62,14 @@ export default function CookieConsentBanner({ onAccept, onDecline }: CookieConse
       analytics: true,
       marketing: true,
     };
-    
+
     localStorage.setItem("cookieConsent", "accepted");
     localStorage.setItem("cookiePreferences", JSON.stringify(preferences));
     localStorage.setItem("marketingConsent", "accepted");
-    
+
     setIsVisible(false);
     onAccept?.({ ...preferences, marketing: true });
-    
+
     // Save to API
     try {
       await fetch("/api/privacy-consent", {
@@ -89,14 +88,14 @@ export default function CookieConsentBanner({ onAccept, onDecline }: CookieConse
       analytics: false,
       marketing: false,
     };
-    
+
     localStorage.setItem("cookieConsent", "declined");
     localStorage.setItem("cookiePreferences", JSON.stringify(preferences));
     localStorage.setItem("marketingConsent", "declined");
-    
+
     setIsVisible(false);
     onDecline?.();
-    
+
     // Save to API
     try {
       await fetch("/api/privacy-consent", {
@@ -114,23 +113,23 @@ export default function CookieConsentBanner({ onAccept, onDecline }: CookieConse
       ...cookiePreferences,
       marketing: marketingConsent,
     };
-    
+
     localStorage.setItem("cookieConsent", "custom");
     localStorage.setItem("cookiePreferences", JSON.stringify(preferences));
     localStorage.setItem("marketingConsent", marketingConsent ? "accepted" : "declined");
-    
+
     setIsVisible(false);
     onAccept?.({ ...preferences, marketing: marketingConsent });
-    
+
     // Save to API
     try {
       await fetch("/api/privacy-consent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          choice: marketingConsent ? "accept" : "decline", 
-          marketing: marketingConsent, 
-          cookies: preferences 
+        body: JSON.stringify({
+          choice: marketingConsent ? "accept" : "decline",
+          marketing: marketingConsent,
+          cookies: preferences
         }),
       });
     } catch (error) {
@@ -169,12 +168,12 @@ export default function CookieConsentBanner({ onAccept, onDecline }: CookieConse
             <div className="relative max-w-6xl mx-auto">
               {/* Animated Background Gradient */}
               <div className="absolute inset-0 bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 rounded-3xl blur-2xl opacity-80"></div>
-              
+
               {/* Main Content */}
               <div className="relative bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-3xl shadow-2xl border-2 border-white/20 overflow-hidden">
                 {/* Decorative Pattern */}
                 <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAzNGMwIDMuMzE0LTIuNjg2IDYtNiA2cy02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiA2IDIuNjg2IDYgNnoiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4wNSkiLz48L2c+PC9zdmc+')] opacity-30"></div>
-                
+
                 {/* Content */}
                 <div className="relative p-6 md:p-8">
                   {/* Header */}
@@ -193,19 +192,19 @@ export default function CookieConsentBanner({ onAccept, onDecline }: CookieConse
                         Cookie & Privacy Preferences
                       </h2>
                       <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
-                        We use cookies and similar technologies to enhance your browsing experience, analyze site traffic, and personalize content. 
+                        We use cookies and similar technologies to enhance your browsing experience, analyze site traffic, and personalize content.
                         By clicking "Accept All", you consent to our use of cookies. You can customize your preferences or learn more in our{" "}
                         <Link to="/privacy-policy" className="text-blue-600 dark:text-blue-400 hover:underline font-semibold">
                           Privacy Policy
                         </Link>.
                       </p>
                     </div>
-                    <button
+                    <Button
                       onClick={handleDeclineAll}
                       className="flex-shrink-0 p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
                     >
                       <XMarkIcon className="w-5 h-5 text-slate-500" />
-                    </button>
+                    </Button>
                   </div>
 
                   {/* Details Section */}
@@ -226,17 +225,16 @@ export default function CookieConsentBanner({ onAccept, onDecline }: CookieConse
                                 <EnvelopeIcon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
                                 <h3 className="font-bold text-slate-900 dark:text-slate-50">Marketing Communications</h3>
                               </div>
-                              <button
+                              <Button
                                 onClick={() => setMarketingConsent(!marketingConsent)}
-                                className={`relative w-14 h-7 rounded-full transition-colors duration-300 ${
-                                  marketingConsent ? "bg-gradient-to-r from-blue-500 to-purple-500" : "bg-slate-300 dark:bg-slate-600"
-                                }`}
+                                className={`relative w-14 h-7 rounded-full transition-colors duration-300 ${marketingConsent ? "bg-gradient-to-r from-blue-500 to-purple-500" : "bg-slate-300 dark:bg-slate-600"
+                                  }`}
                               >
                                 <motion.div
                                   animate={{ x: marketingConsent ? 28 : 2 }}
                                   className="absolute top-1 left-1 w-5 h-5 bg-white rounded-full shadow-lg"
                                 />
-                              </button>
+                              </Button>
                             </div>
                             <p className="text-sm text-slate-600 dark:text-slate-400">
                               Receive promotional emails, special offers, and product updates from Almon Products Ltd.
@@ -249,7 +247,7 @@ export default function CookieConsentBanner({ onAccept, onDecline }: CookieConse
                               <Cog6ToothIcon className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                               Cookie Preferences
                             </h3>
-                            
+
                             {/* Essential Cookies */}
                             <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
                               <div className="flex-1">
@@ -276,17 +274,16 @@ export default function CookieConsentBanner({ onAccept, onDecline }: CookieConse
                                   Help us understand how visitors interact with our website to improve user experience.
                                 </p>
                               </div>
-                              <button
+                              <Button
                                 onClick={() => toggleCookiePreference("analytics")}
-                                className={`ml-4 relative w-14 h-7 rounded-full transition-colors duration-300 ${
-                                  cookiePreferences.analytics ? "bg-gradient-to-r from-blue-500 to-purple-500" : "bg-slate-300 dark:bg-slate-600"
-                                }`}
+                                className={`ml-4 relative w-14 h-7 rounded-full transition-colors duration-300 ${cookiePreferences.analytics ? "bg-gradient-to-r from-blue-500 to-purple-500" : "bg-slate-300 dark:bg-slate-600"
+                                  }`}
                               >
                                 <motion.div
                                   animate={{ x: cookiePreferences.analytics ? 28 : 2 }}
                                   className="absolute top-1 left-1 w-5 h-5 bg-white rounded-full shadow-lg"
                                 />
-                              </button>
+                              </Button>
                             </div>
 
                             {/* Marketing Cookies */}
@@ -297,17 +294,16 @@ export default function CookieConsentBanner({ onAccept, onDecline }: CookieConse
                                   Used to deliver relevant advertisements and track campaign effectiveness.
                                 </p>
                               </div>
-                              <button
+                              <Button
                                 onClick={() => toggleCookiePreference("marketing")}
-                                className={`ml-4 relative w-14 h-7 rounded-full transition-colors duration-300 ${
-                                  cookiePreferences.marketing ? "bg-gradient-to-r from-purple-500 to-pink-500" : "bg-slate-300 dark:bg-slate-600"
-                                }`}
+                                className={`ml-4 relative w-14 h-7 rounded-full transition-colors duration-300 ${cookiePreferences.marketing ? "bg-gradient-to-r from-purple-500 to-pink-500" : "bg-slate-300 dark:bg-slate-600"
+                                  }`}
                               >
                                 <motion.div
                                   animate={{ x: cookiePreferences.marketing ? 28 : 2 }}
                                   className="absolute top-1 left-1 w-5 h-5 bg-white rounded-full shadow-lg"
                                 />
-                              </button>
+                              </Button>
                             </div>
                           </div>
 

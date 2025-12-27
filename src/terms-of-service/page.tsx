@@ -4,7 +4,7 @@ import { motion, useScroll, useTransform } from "framer-motion";
 import { Link } from "@heroui/link";
 import { Button } from "@heroui/react";
 import { useNavigate } from "react-router-dom";
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import {
   DocumentTextIcon,
   ScaleIcon,
