@@ -1,42 +1,12 @@
 "use client";
 
 import React, { useState } from "react";
-import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Input, Button, Select, SelectItem, Textarea } from "@heroui/react";
+import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Input, Button, Textarea } from "@heroui/react";
 import axios from "axios";
-
-const deliveryAreas: Record<string, number> = {
-  "nairobi-cbd": 500,
-  "westlands": 600,
-  "kilimani": 600,
-  "parklands": 600,
-  "lavington": 700,
-  "karen": 800,
-  "runda": 800,
-  "langata": 700,
-  "kasarani": 700,
-  "roysambu": 700,
-  "ruiru": 800,
-  "thika": 1000,
-  "juja": 900,
-  "kiambu": 800,
-  "ruaka": 700,
-  "rongai": 800,
-  "ngong": 900,
-  "kikuyu": 900,
-  "westlands-area": 600,
-  "other": 1000,
-};
-
-const formatAreaName = (key: string) => {
-  return key
-    .split("-")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-};
 
 interface CartItem {
   id: string;
-  productId?: string; // Optional for backward compatibility
+  productId?: string;
   name: string;
   variant: string;
   price: number;
@@ -46,18 +16,14 @@ interface CartItem {
 interface CheckoutModalProps {
   isOpen: boolean;
   onClose: () => void;
-  subtotal: number;
-  deliveryFee: number;
   total: number;
-  deliveryArea: string;
-  onDeliveryAreaChange: (area: string) => void;
   cartItems: CartItem[];
   productSaleType: Record<string, "roll" | "metre" | "board" | "unit">;
   storeId?: string;
   onOrderSubmit?: (orderData: any) => Promise<{ sale_id?: string } | void>;
 }
 
-// Map variant names to API unit format (NestJS expects: pcs, meter, roll)
+// Map variant names to API unit format
 const mapVariantToUnit = (variant: string, saleType: "roll" | "metre" | "board" | "unit"): string => {
   const variantLower = variant.toLowerCase();
   if (variantLower.includes("roll")) return "roll";
@@ -65,35 +31,29 @@ const mapVariantToUnit = (variant: string, saleType: "roll" | "metre" | "board" 
   if (variantLower.includes("board") || variantLower.includes("sheet")) return "pcs";
   if (variantLower.includes("unit") || variantLower.includes("pcs")) return "pcs";
 
-  // Fallback to sale type - map to NestJS expected values
   switch (saleType) {
     case "roll": return "roll";
-    case "metre": return "meter"; // Note: NestJS uses "meter" not "metre"
-    case "board": return "pcs"; // Board/sheet maps to pcs
+    case "metre": return "meter";
+    case "board": return "pcs";
     case "unit": return "pcs";
     default: return "pcs";
   }
 };
 
-// Extract product ID from cart item ID (format: "product-id-variant")
-// Variants are typically single words: "Roll", "Metre", "Board", "Unit"
+// Extract product ID from cart item ID
 const extractProductId = (cartItemId: string, variant: string): string => {
-  // Remove the variant suffix from the cart item ID
   const variantLower = variant.toLowerCase();
   const idLower = cartItemId.toLowerCase();
 
-  // Try to find and remove the variant at the end
   if (idLower.endsWith(`-${variantLower}`)) {
-    return cartItemId.slice(0, -(variantLower.length + 1)); // +1 for the hyphen
+    return cartItemId.slice(0, -(variantLower.length + 1));
   }
 
-  // Fallback: split by last occurrence of variant
   const lastIndex = idLower.lastIndexOf(`-${variantLower}`);
   if (lastIndex !== -1) {
     return cartItemId.slice(0, lastIndex);
   }
 
-  // If all else fails, return as is (shouldn't happen in normal flow)
   return cartItemId;
 };
 
@@ -101,28 +61,21 @@ const extractProductId = (cartItemId: string, variant: string): string => {
 const normalizeSaleId = (saleId: string | null | undefined): string | null => {
   if (!saleId) return null;
 
-  // If already starts with SAL, return as is
   if (saleId.toUpperCase().startsWith('SAL')) {
     return saleId.toUpperCase();
   }
 
-  // If it's a numeric ID, add SAL prefix
   if (/^\d+$/.test(saleId)) {
-    return `SAL${saleId.padStart(6, '0')}`; // Format: SAL000001, SAL000002, etc.
+    return `SAL${saleId.padStart(6, '0')}`;
   }
 
-  // Otherwise, just add SAL prefix
   return `SAL${saleId}`;
 };
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   isOpen,
   onClose,
-  subtotal,
-  deliveryFee,
   total,
-  deliveryArea,
-  onDeliveryAreaChange,
   cartItems,
   productSaleType,
   storeId = "almon-products",
@@ -134,16 +87,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [recipientPhone, setRecipientPhone] = useState("");
   const [recipientEmail, setRecipientEmail] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
-  const [paymentMethod] = useState("mpesa"); // Fixed to M-Pesa only
+  const [paymentMethod] = useState("mpesa");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
 
   const formatOrderData = () => {
     const products = cartItems.map((item) => {
-      // Use productId if available, otherwise extract from id
-      // Backend expects uppercase product IDs like "PRD251100003"
       let productId = item.productId || extractProductId(item.id, item.variant);
-      // Ensure product ID is uppercase (backend uses uppercase SKUs)
       if (productId && typeof productId === 'string') {
         productId = productId.toUpperCase();
       }
@@ -153,14 +103,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       return {
         product_id: productId,
         quantity: item.quantity,
-        unit: unit, // NestJS expects lowercase "unit" with values: pcs, meter, roll
+        unit: unit,
       };
     });
 
-    // Build order payload - store_id is required by backend
-    // Note: You may need to update the storeId prop with the correct store ID from your backend
     return {
-      store_id: storeId || "almon-products", // Backend requires this, update with correct value
+      store_id: storeId || "almon-products",
       products: products,
       delivery: {
         recipient_name: recipientName,
@@ -171,15 +119,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       payment_method: paymentMethod,
       phone_number: phoneNumber,
       customer_name: customerName,
-      delivery_area: deliveryArea, // Make sure to include delivery area
-      delivery_fee: deliveryFee, // Include delivery fee
-      total_amount: total, // Include total amount
+      total_amount: total,
     };
   };
 
   const handleSubmit = async () => {
-    // Validate required fields
-    if (!customerName || !phoneNumber || !recipientName || !recipientPhone || !deliveryAddress || !deliveryArea) {
+    if (!customerName || !phoneNumber || !recipientName || !recipientPhone || !deliveryAddress) {
       setStatus("Please fill in all required fields.");
       return;
     }
@@ -199,24 +144,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       // Step 1: Submit order
       if (onOrderSubmit) {
         const result = await onOrderSubmit(orderData);
-        // If custom handler returns sale_id, use it
         if (result && typeof result === 'object' && 'sale_id' in result) {
           saleId = normalizeSaleId(result.sale_id as string);
         }
         setStatus("Order submitted successfully!");
       } else {
-        // Submit to NestJS backend endpoint
-        console.log("Submitting order:", JSON.stringify(orderData, null, 2)); // Debug log
+        console.log("Submitting order:", JSON.stringify(orderData, null, 2));
         try {
           const orderRes = await axios.post("/customer/orders", orderData);
-
-          // Extract and normalize sale_id from response
           const rawSaleId = orderRes.data?.sale_id || orderRes.data?.id || orderRes.data?.order_id || null;
           saleId = normalizeSaleId(rawSaleId);
-
           setStatus("Order submitted successfully!");
         } catch (orderError: any) {
-          // Log detailed error for debugging
           console.error("Order submission error details:", orderError.response?.data);
           if (orderError.response?.data?.message && Array.isArray(orderError.response.data.message)) {
             const errorMessages = orderError.response.data.message.join(", ");
@@ -229,7 +168,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       // Step 2: Process payment with sale_id
       if (saleId) {
         try {
-          // Update the payment endpoint to use the correct format
           const paymentRes = await axios.post(`localhost:8000/api/customer/order/${saleId}/pay`, {
             payment_method: paymentMethod,
             amount: total,
@@ -241,7 +179,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           // If payment method is M-Pesa, also initiate STK push
           if (paymentMethod === "mpesa") {
             try {
-              // Ensure phone number has correct format (254XXXXXXXXX)
               const formattedPhone = phoneNumber.startsWith('0')
                 ? `254${phoneNumber.substring(1)}`
                 : phoneNumber.startsWith('+254')
@@ -288,7 +225,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     } catch (error: any) {
       console.error("Order submission error:", error.response?.data || error.message);
 
-      // Handle validation errors array
       let errorMessage = "Order submission failed. Please try again.";
       if (error.response?.data?.message) {
         if (Array.isArray(error.response.data.message)) {
@@ -316,18 +252,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         </ModalHeader>
         <ModalBody className="space-y-4">
           {/* Order Summary */}
-          <div className="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-lg space-y-2">
-            <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
-              <span>Subtotal:</span>
-              <span>KES {subtotal.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
-              <span>Delivery Fee:</span>
-              <span className={deliveryFee > 0 ? "" : "text-gray-400"}>
-                {deliveryFee > 0 ? `KES ${deliveryFee.toLocaleString()}` : "Select area"}
-              </span>
-            </div>
-            <div className="border-t border-gray-300 dark:border-gray-600 pt-2 flex justify-between font-semibold text-gray-900 dark:text-white">
+          <div className="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-lg">
+            <div className="flex justify-between font-semibold text-gray-900 dark:text-white">
               <span>Total:</span>
               <span>KES {total.toLocaleString()}</span>
             </div>
@@ -357,23 +283,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           {/* Delivery Information */}
           <div className="space-y-3">
             <h3 className="font-semibold text-gray-900 dark:text-white">Delivery Information</h3>
-            <Select
-              label="Delivery Area"
-              placeholder="Select your delivery area"
-              selectedKeys={deliveryArea ? [deliveryArea] : []}
-              onSelectionChange={(keys) => {
-                const selected = Array.from(keys)[0] as string;
-                onDeliveryAreaChange(selected || "");
-              }}
-              className="w-full"
-              isRequired
-            >
-              {Object.keys(deliveryAreas).map((area) => (
-                <SelectItem key={area} textValue={`${formatAreaName(area)} - KES ${deliveryAreas[area].toLocaleString()}`}>
-                  {formatAreaName(area)} - KES {deliveryAreas[area].toLocaleString()}
-                </SelectItem>
-              ))}
-            </Select>
             <Input
               label="Recipient Name"
               placeholder="Enter recipient's full name"
@@ -436,7 +345,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             color="primary"
             onPress={handleSubmit}
             isLoading={loading}
-            disabled={!customerName || !phoneNumber || !recipientName || !recipientPhone || !deliveryAddress || !deliveryArea || cartItems.length === 0}
+            disabled={!customerName || !phoneNumber || !recipientName || !recipientPhone || !deliveryAddress || cartItems.length === 0}
           >
             {paymentMethod === "mpesa" ? "Place Order & Pay via STK" : "Place Order"}
           </Button>
