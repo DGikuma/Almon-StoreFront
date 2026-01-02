@@ -3,6 +3,8 @@
  * Handles fetching and syncing products from the backend API
  */
 
+const API_BASE = import.meta.env.VITE_API_BASE || "https://ecommerce-backend-snc5.onrender.com";
+
 export interface BackendProduct {
   id: string;
   sku: string;
@@ -47,7 +49,7 @@ export interface ProductsResponse {
 export async function fetchProducts(): Promise<ProductsResponse> {
   try {
     // Fetch products from NestJS backend
-    const response = await fetch("/customer/products", {
+    const response = await fetch(`${API_BASE}/customer/products`, {
       cache: "no-store",
       headers: {
         "Cache-Control": "no-cache",
@@ -71,10 +73,10 @@ export async function fetchProducts(): Promise<ProductsResponse> {
 
     const data = await response.json();
     console.log("Products API Response:", data); // Debug log
-    
+
     // Handle different response formats from NestJS
     let products: any[] = [];
-    
+
     // If NestJS returns an array directly
     if (Array.isArray(data)) {
       // Check if it's an array of cart items with nested products
@@ -138,19 +140,19 @@ export async function fetchProducts(): Promise<ProductsResponse> {
       if (product.variants && product.price !== undefined) {
         return product;
       }
-      
+
       // Transform from NestJS format to frontend format
       const saleType = product.base_unit?.toLowerCase().includes('meter') || product.base_unit?.toLowerCase().includes('metre')
         ? 'metre'
         : product.base_unit?.toLowerCase().includes('roll')
-        ? 'roll'
-        : product.base_unit?.toLowerCase().includes('sheet') || product.base_unit?.toLowerCase().includes('board')
-        ? 'board'
-        : 'unit';
-      
+          ? 'roll'
+          : product.base_unit?.toLowerCase().includes('sheet') || product.base_unit?.toLowerCase().includes('board')
+            ? 'board'
+            : 'unit';
+
       const variantLabel = saleType.charAt(0).toUpperCase() + saleType.slice(1);
       let price = typeof product.price === 'string' ? parseFloat(product.price) : product.price || 0;
-      
+
       // Apply discounts if available
       if (product.discounts && Array.isArray(product.discounts)) {
         const activeDiscount = product.discounts.find((d: any) => d.is_active);
@@ -160,11 +162,11 @@ export async function fetchProducts(): Promise<ProductsResponse> {
           price = price - parseFloat(activeDiscount.flat_amount);
         }
       }
-      
+
       // Use SKU for display ID (lowercase for URLs), but preserve original uppercase SKU for API calls
       const displayId = product.sku?.toLowerCase().replace(/[^a-z0-9-]/g, "-") || product.id?.toLowerCase();
       const originalId = product.id || product.sku; // Preserve original product ID (SKU in uppercase) for API calls
-      
+
       return {
         id: displayId, // For display and cart purposes (lowercase)
         originalId: originalId, // Original product ID/SKU from backend (uppercase) for API calls
@@ -214,7 +216,7 @@ export function pollProducts(
 
   const poll = async () => {
     if (!isActive) return;
-    
+
     try {
       const data = await fetchProducts();
       if (data.products.length > 0) {

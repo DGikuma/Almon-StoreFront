@@ -11,7 +11,7 @@ import DeliveryModal from "@/components/DeliveryModal";
 import CookieConsentBanner from "@/components/CookieConsentBanner";
 import { ProductCard } from "@/components/ProductCard";
 import { motion } from "framer-motion";
-import { Tabs, Tab } from "@heroui/react";
+import { Tabs, Tab, Button } from "@heroui/react";
 import { SunIcon, MoonIcon, ShoppingBagIcon } from "@heroicons/react/24/outline";
 import { fetchProducts, pollProducts, type FrontendProduct } from "@/lib/productService";
 
@@ -853,7 +853,7 @@ export default function StorefrontPage() {
 
               {/* Mobile Compact Actions */}
               <div className="sm:hidden flex items-center gap-2">
-                <button onClick={() => setDeliveryModalOpen(true)} className="rounded-full p-2 bg-white/8">
+                <Button onClick={() => setDeliveryModalOpen(true)} className="rounded-full p-2 bg-white/8">
                   <svg
                     className="w-5 h-5"
                     fill="none"
@@ -867,10 +867,10 @@ export default function StorefrontPage() {
                       d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"
                     />
                   </svg>
-                </button>
-                <button onClick={() => setTrackModalOpen(true)} className="rounded-full p-2 bg-white/8">
+                </Button>
+                <Button onClick={() => setTrackModalOpen(true)} className="rounded-full p-2 bg-white/8">
                   <ShoppingBagIcon className="w-5 h-5" />
-                </button>
+                </Button>
               </div>
             </div>
           </div>
