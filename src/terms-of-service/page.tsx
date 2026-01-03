@@ -201,11 +201,13 @@ export default function TermsOfServicePage() {
           </p>
           <div className="space-y-3">
             {[
-              { title: "Return Window", desc: "Returns must be requested within [X] days of delivery" },
+              { title: "Return Window", desc: "Returns must be requested within 1 day after delivery" },
               { title: "Condition", desc: "Products must be unused, in original packaging, and in resalable condition" },
               { title: "Custom Products", desc: "Custom or personalized products may not be eligible for return unless defective" },
-              { title: "Refund Processing", desc: "Refunds will be processed to the original payment method within [X] business days" },
+              { title: "Refund Processing", desc: "Refunds will be processed to the original payment method within 7 business days" },
               { title: "Return Shipping", desc: "Return shipping costs are the customer's responsibility unless the product is defective or incorrect" },
+              { title: "Non-Returnable Items", desc: "Certain items such as perishable goods, digital products, and gift cards are non-returnable" },
+              { title: "Concerns", desc: "If you have any concerns about your order, please contact our customer service team" },
             ].map((item, idx) => (
               <div key={idx} className="flex gap-4 p-5 bg-gradient-to-r from-red-50/50 to-rose-50/50 dark:from-red-950/30 dark:to-rose-950/30 rounded-xl border border-red-200/50 dark:border-red-800/30 backdrop-blur-sm">
                 <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-gradient-to-br from-red-500 to-rose-500 flex items-center justify-center text-white font-bold">
@@ -464,15 +466,15 @@ export default function TermsOfServicePage() {
             <div className="space-y-4 text-purple-50">
               <p className="flex items-center gap-4 text-lg">
                 <span className="w-3 h-3 rounded-full bg-white"></span>
-                Email: legal@almonproducts.com
+                Email: almonltd80@gmail.com
               </p>
               <p className="flex items-center gap-4 text-lg">
                 <span className="w-3 h-3 rounded-full bg-white"></span>
-                Phone: [Your Contact Number]
+                Phone: (+254) 0711791981
               </p>
               <p className="flex items-center gap-4 text-lg">
                 <span className="w-3 h-3 rounded-full bg-white"></span>
-                Address: [Your Business Address]
+                Address: Kilome Road, Nairobi CBD
               </p>
             </div>
           </div>
