@@ -11,7 +11,7 @@ import {
   SelectItem,
 } from "@heroui/react";
 import { motion } from "framer-motion";
-import { Plus, Minus, ShoppingCart } from "lucide-react";
+import { Plus, Minus, ShoppingCart, CheckCircle2, ChevronUp } from "lucide-react";
 
 interface ProductCardProps {
   id: string;
@@ -73,6 +73,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
   const metreOptions = [0.25, 0.5, 1];
 
+  // Function to scroll to top of page
+  const scrollToTop = () => {
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  };
+
   return (
     <motion.div
       key={id}
@@ -115,11 +123,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                   <button
                     key={variantLabel}
                     onClick={() => onVariantChange(variantLabel)}
-                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                      selected
-                        ? "bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-md"
-                        : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600"
-                    }`}
+                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${selected
+                      ? "bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-md"
+                      : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600"
+                      }`}
                   >
                     {variantLabel}
                   </button>
@@ -205,6 +212,45 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               </span>
             </div>
           </div>
+
+          {/* Floating Cart Indicator — Only shows when quantity > 0 */}
+          {quantity > 0 && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.3, ease: "easeOut" }}
+              className="absolute top-4 right-4 z-20"
+            >
+              <button
+                type="button"
+                onClick={scrollToTop}
+                className="relative cursor-pointer focus:outline-none group/indicator"
+              >
+                <div className="flex items-center gap-2 px-4 py-2 rounded-full backdrop-blur-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white shadow-2xl border border-white/20 group-hover/indicator:scale-105 transition-transform duration-200">
+                  <ShoppingCart className="w-5 h-5" />
+                  <span className="text-sm font-semibold tracking-wide">
+                    In Cart
+                  </span>
+                </div>
+
+                {/* Quantity Badge */}
+                <span className="absolute -top-2 -right-2 min-w-6 h-6 px-1 rounded-full bg-emerald-500 text-white text-xs font-bold flex items-center justify-center shadow-lg">
+                  {quantity}
+                </span>
+
+                {/* Success Tick */}
+                <CheckCircle2 className="absolute -bottom-2 -left-2 w-5 h-5 text-emerald-400 drop-shadow-md" />
+
+                {/* Scroll to top indicator */}
+                <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 flex flex-col items-center opacity-0 group-hover/indicator:opacity-100 transition-opacity duration-200">
+                  <ChevronUp className="w-4 h-4 text-gray-600" />
+                  <span className="text-xs text-gray-600 font-medium whitespace-nowrap">
+                    Scroll to top
+                  </span>
+                </div>
+              </button>
+            </motion.div>
+          )}
 
           <Button
             color="default"

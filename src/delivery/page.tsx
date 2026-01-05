@@ -1,112 +1,223 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
+import {
+  Modal,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  Input,
+  Button,
+  Checkbox,
+  Spinner,
+  Divider,
+  Chip,
+  Card,
+  CardBody,
+  Accordion,
+  AccordionItem,
+  Image,
+} from "@heroui/react";
+
+const API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  "https://ecommerce-backend-snc5.onrender.com";
+
+interface ProductItem {
+  product_id: string;
+  quantity: number;
+  unit: string;
+}
 
 interface OrderItem {
-  id: string | number;
-  product_id?: string;
+  id: string;
+  product_id: string;
   name: string;
-  confirmed: boolean;
-  price: number;
   quantity: number;
-  unit?: string; // e.g., "roll", "metre", "sheet", "unit", "kg"
+  price: number;
+  unit: string;
+  confirmed: boolean;
+  image_url?: string;
 }
 
-interface ModalProps {
+interface ConfirmDeliveryModalProps {
   isOpen: boolean;
   onClose: () => void;
-  orderItems?: OrderItem[];
 }
 
-// Dummy data for testing with various units (metres, rolls, sheets, units)
-// Note: This is kept for reference but not currently used
-// const dummyOrderItems: OrderItem[] = [
-//   // Rolls
-//   { id: 1, name: "Frontlit Banner 1.5m - 440gsm", confirmed: false, price: 4200, quantity: 3, unit: "roll" },
-//   { id: 2, name: "Frontlit Banner 2.7m - 440gsm", confirmed: false, price: 7200, quantity: 2, unit: "roll" },
-//   // ... more items
-// ];
-
-export const ConfirmDeliveryModal: React.FC<ModalProps> = ({ isOpen, onClose, orderItems }) => {
-  const [items, setItems] = useState<OrderItem[]>(orderItems || []);
-  const [orderNumber, setOrderNumber] = useState("");
-  const [loadingOrder, setLoadingOrder] = useState(false);
-  const [showDeliveryNote, setShowDeliveryNote] = useState(false);
-  const [deliveryNoteData, setDeliveryNoteData] = useState<{
-    orderNumber: string;
-    receivedItems: OrderItem[];
-    missingItems: OrderItem[];
-    date: string;
-  } | null>(null);
+export function ConfirmDeliveryModal({ isOpen, onClose }: ConfirmDeliveryModalProps) {
+  const [deliveryId, setDeliveryId] = useState("");
+  const [items, setItems] = useState<OrderItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [orderInfo, setOrderInfo] = useState<any>(null);
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [otpLoading, setOtpLoading] = useState(false);
   const [otpError, setOtpError] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState("");
   const [deliveryCompleted, setDeliveryCompleted] = useState(false);
-  const [verifyingOtp, setVerifyingOtp] = useState(false);
+  const [showDeliveryNote, setShowDeliveryNote] = useState(false);
+  const [error, setError] = useState("");
+  const [customerInfo, setCustomerInfo] = useState<any>(null);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    orderInfo: true,
+    customerInfo: true,
+    deliveryInfo: true,
+    items: true,
+  });
 
+  // Reset state when modal opens/closes
   useEffect(() => {
-    if (orderItems && orderItems.length > 0) {
-      setItems(orderItems.map(item => ({ ...item, confirmed: false })));
+    if (!isOpen) {
+      resetState();
     }
-  }, [orderItems]);
+  }, [isOpen]);
 
-  // Fetch order items when order number is entered
-  const fetchOrderItems = async () => {
-    if (!orderNumber.trim()) {
-      setOtpError("Please enter an order ID");
+  const resetState = () => {
+    setDeliveryId("");
+    setItems([]);
+    setOtp("");
+    setOtpSent(false);
+    setDeliveryCompleted(false);
+    setShowDeliveryNote(false);
+    setError("");
+    setOtpError("");
+    setLoading(false);
+    setOtpLoading(false);
+    setOrderInfo(null);
+    setCustomerInfo(null);
+    setExpandedSections({
+      orderInfo: true,
+      customerInfo: true,
+      deliveryInfo: true,
+      items: true,
+    });
+  };
+
+  const toggleSection = (section: string) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  };
+
+  const fetchOrderDetails = async (orderNumber: string) => {
+    try {
+      const response = await axios.get(`${API_BASE}/customer/orders/${orderNumber}`);
+      return response.data;
+    } catch (err: any) {
+      console.error("Error fetching order details:", err);
+      return null;
+    }
+  };
+
+  const loadDeliveryItems = async () => {
+    if (!deliveryId.trim()) {
+      setError("Please enter a delivery ID or order number");
       return;
     }
 
-    setLoadingOrder(true);
+    setLoading(true);
+    setError("");
+    setItems([]);
+    setOrderInfo(null);
+    setCustomerInfo(null);
+
+    try {
+      const orderData = await fetchOrderDetails(deliveryId);
+
+      if (!orderData) {
+        setError("Order/Delivery not found. Please check the ID.");
+        return;
+      }
+
+      setOrderInfo(orderData);
+
+      // Set customer info
+      if (orderData.delivery) {
+        setCustomerInfo({
+          name: orderData.delivery.recipient_name || orderData.customer_name,
+          phone: orderData.delivery.recipient_phone,
+          email: orderData.delivery.recipient_email,
+          address: orderData.delivery.delivery_address,
+        });
+      } else if (orderData.customer_name) {
+        setCustomerInfo({
+          name: orderData.customer_name,
+        });
+      }
+
+      // Transform items
+      if (orderData.items && Array.isArray(orderData.items)) {
+        const transformedItems: OrderItem[] = orderData.items.map((item: any, index: number) => ({
+          id: item.id || `item-${index}`,
+          product_id: item.id || `prod-${index}`,
+          name: `Item ${index + 1}`,
+          quantity: item.quantity || 1,
+          price: parseFloat(item.price) || 0,
+          unit: "pcs",
+          confirmed: true,
+        }));
+        setItems(transformedItems);
+      } else {
+        const sampleItems: OrderItem[] = [{
+          id: "sample-1",
+          product_id: "sample-1",
+          name: "Order Item",
+          quantity: 1,
+          price: parseFloat(orderData.payable_amount) || 0,
+          unit: "pcs",
+          confirmed: true,
+        }];
+        setItems(sampleItems);
+      }
+
+    } catch (err: any) {
+      console.error("Error loading delivery:", err);
+      setError(err.message || "Unable to connect to the backend.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateOtpForDelivery = async () => {
+    const deliveredItems = items.filter((i) => i.confirmed);
+    if (deliveredItems.length === 0) {
+      setOtpError("Please select delivered items");
+      return;
+    }
+
+    const products: ProductItem[] = deliveredItems.map((item) => ({
+      product_id: item.product_id,
+      quantity: item.quantity,
+      unit: item.unit || "pcs",
+    }));
+
+    setOtpLoading(true);
     setOtpError("");
 
     try {
-      const response = await axios.get(`/api/delivery/order-items?order_id=${orderNumber}`);
-      const orderData = response.data;
+      const payload = { delivery_id: deliveryId, products };
+      const response = await axios.post(`${API_BASE}/api/Customer/confirmOrder`, payload);
 
-      if (orderData.items && orderData.items.length > 0) {
-        setItems(orderData.items.map((item: any) => ({
-          id: item.id,
-          product_id: item.product_id,
-          name: item.name,
-          confirmed: false,
-          price: item.price,
-          quantity: item.quantity,
-          unit: item.unit,
-        })));
-        setPhoneNumber(orderData.delivery?.recipient_phone || "");
+      if (response.data && (response.data.success || response.data.message)) {
+        setOtpSent(true);
+        setShowDeliveryNote(true);
       } else {
-        setOtpError("No items found for this order");
-        setItems([]);
+        throw new Error(response.data?.message || "Failed to generate OTP");
       }
-    } catch (error: any) {
-      setOtpError(error.response?.data?.message || "Failed to load order items");
-      setItems([]);
+    } catch (err: any) {
+      console.error("Error generating OTP:", err);
+      setOtpError(err.response?.data?.message || err.message || "Failed to generate OTP.");
     } finally {
-      setLoadingOrder(false);
+      setOtpLoading(false);
     }
   };
 
-  const toggleItem = (id: string | number) => {
-    setItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, confirmed: !item.confirmed } : item))
-    );
-  };
-
-  const handleGenerateOtp = async () => {
-    const confirmedItems = items.filter((item) => item.confirmed);
-
-    if (confirmedItems.length === 0) {
-      setOtpError("Please select at least one item that has been delivered");
-      return;
-    }
-
-    if (!orderNumber.trim()) {
-      setOtpError("Please enter an order ID");
+  const verifyOtpAndCompleteDelivery = async () => {
+    if (otp.length !== 6) {
+      setOtpError("Enter a valid 6-digit OTP");
       return;
     }
 
@@ -114,599 +225,429 @@ export const ConfirmDeliveryModal: React.FC<ModalProps> = ({ isOpen, onClose, or
     setOtpError("");
 
     try {
-      const deliveredItems = confirmedItems.map(item => ({
-        product_id: item.product_id || item.id.toString(),
-        quantity: item.quantity,
-        price: item.price,
-      }));
+      const payload = { delivery_id: deliveryId, otp };
+      const response = await axios.post(`${API_BASE}/api/Customer/confirmOrderOtp`, payload);
 
-      const response = await axios.post("/api/delivery/generate-otp", {
-        order_id: orderNumber,
-        delivered_items: deliveredItems,
-      });
-
-      setOtpSent(true);
-      setOtpError("");
-
-      // Store delivery note data
-      const unconfirmedItems = items.filter((item) => !item.confirmed);
-      setDeliveryNoteData({
-        orderNumber: orderNumber,
-        receivedItems: confirmedItems,
-        missingItems: unconfirmedItems,
-        date: new Date().toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      });
-
-      // Show delivery note
-      setShowDeliveryNote(true);
-
-      // In development, show OTP in console (remove in production)
-      if (response.data.otp) {
-        console.log("OTP (dev only):", response.data.otp);
+      if (response.data && (response.data.success || response.data.message)) {
+        setDeliveryCompleted(true);
+        setTimeout(() => {
+          onClose();
+          resetState();
+        }, 3000);
+      } else {
+        throw new Error(response.data?.message || "Failed to verify OTP");
       }
-    } catch (error: any) {
-      setOtpError(error.response?.data?.message || "Failed to generate OTP");
+    } catch (err: any) {
+      console.error("Error verifying OTP:", err);
+      setOtpError(err.response?.data?.message || err.message || "Failed to verify OTP.");
     } finally {
       setOtpLoading(false);
     }
   };
 
-  const handleAcceptDelivery = () => {
-    // This is now handled by handleGenerateOtp
-    handleGenerateOtp();
-  };
-
-  const handlePrintDeliveryNote = () => {
-    window.print();
-  };
-
-  const handleCloseDeliveryNote = () => {
-    setShowDeliveryNote(false);
-    setDeliveryCompleted(false);
-    setOtp("");
-    setOtpSent(false);
-    setOtpError("");
-    setOrderNumber("");
-    setItems([]);
-    setDeliveryNoteData(null);
-    onClose();
-  };
-
-  const handleBackToEdit = () => {
-    if (deliveryNoteData) {
-      // Restore items from delivery note data
-      const allItems = [...deliveryNoteData.receivedItems, ...deliveryNoteData.missingItems];
-      setItems(allItems);
-      setShowDeliveryNote(false);
-      setDeliveryCompleted(false);
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && deliveryId && !otpSent && !deliveryCompleted) {
+      loadDeliveryItems();
     }
-  };
-
-  const handleVerifyOtp = async () => {
-    if (!otp.trim() || otp.length !== 6) {
-      setOtpError("Please enter a valid 6-digit OTP");
-      return;
-    }
-
-    if (!deliveryNoteData) {
-      setOtpError("Delivery data not found");
-      return;
-    }
-
-    setVerifyingOtp(true);
-    setOtpError("");
-
-    try {
-      const deliveredItems = deliveryNoteData.receivedItems.map(item => ({
-        product_id: item.product_id || item.id.toString(),
-        quantity: item.quantity,
-        price: item.price,
-      }));
-
-      await axios.post("/api/delivery/verify-otp", {
-        order_id: orderNumber,
-        otp: otp,
-        delivered_items: deliveredItems,
-      });
-
-      setDeliveryCompleted(true);
-      setOtpError("");
-    } catch (error: any) {
-      setOtpError(error.response?.data?.message || "Failed to verify OTP");
-    } finally {
-      setVerifyingOtp(false);
-    }
-  };
-
-  const handleCompleteDelivery = () => {
-    handleVerifyOtp();
   };
 
   return (
     <>
-      <AnimatePresence>
-        {isOpen && !showDeliveryNote && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-xl w-full max-w-md"
-            >
-              <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">Confirm Your Delivery</h2>
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose}
+        size="3xl"
+        className="max-h-[85vh]"
+      >
+        <ModalContent>
+          <ModalHeader className="border-b pb-3">
+            <div className="w-full">
+              <h2 className="text-xl font-bold">Confirm Delivery</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Enter delivery ID or order number to confirm delivery
+              </p>
+            </div>
+          </ModalHeader>
 
-              <div className="mb-4">
-                <input
-                  type="text"
-                  placeholder="Enter your order ID (e.g., SAL251100001)"
-                  value={orderNumber}
-                  onChange={(e) => setOrderNumber(e.target.value)}
-                  className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded mb-2 dark:bg-gray-700 dark:text-gray-100"
-                />
-                <button
-                  onClick={fetchOrderItems}
-                  disabled={loadingOrder || !orderNumber.trim()}
-                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white py-2 px-4 rounded font-semibold"
-                >
-                  {loadingOrder ? "Loading..." : "Load Order Items"}
-                </button>
-                {otpError && !showDeliveryNote && (
-                  <p className="text-red-500 text-sm mt-2">{otpError}</p>
+          <ModalBody className="pt-4">
+            {/* Delivery ID Input Section */}
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="md:col-span-2">
+                  <Input
+                    label="Delivery/Order ID"
+                    placeholder="Enter order number e.g SAL251100001"
+                    value={deliveryId}
+                    onChange={(e) => setDeliveryId(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    isDisabled={loading || otpSent || deliveryCompleted}
+                    variant="bordered"
+                    className="w-full"
+                    startContent={
+                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                    }
+                  />
+                </div>
+                <div className="flex items-end">
+                  <Button
+                    onClick={loadDeliveryItems}
+                    color="primary"
+                    isDisabled={!deliveryId.trim() || loading || otpSent || deliveryCompleted}
+                    isLoading={loading}
+                    className="w-full"
+                  >
+                    {loading ? "Loading..." : "Fetch Details"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Error Message */}
+              {error && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-md">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.998-.833-2.732 0L4.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                    </svg>
+                    <span className="text-sm">{error}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Loading State */}
+            {loading && (
+              <div className="flex justify-center py-8">
+                <Spinner label="Fetching order details..." color="primary" size="lg" />
+              </div>
+            )}
+
+            {/* Order Information Section */}
+            {orderInfo && !loading && (
+              <div className="space-y-4">
+                {/* Order Summary Card */}
+                <Card className="border shadow-sm">
+                  <CardBody className="p-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Order ID</p>
+                        <p className="font-semibold text-sm">{orderInfo.id || deliveryId}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Status</p>
+                        <Chip
+                          size="sm"
+                          color={
+                            orderInfo.status === 'delivered' ? 'success' :
+                              orderInfo.status === 'pending' ? 'warning' :
+                                orderInfo.status === 'shipped' ? 'primary' : 'default'
+                          }
+                          variant="flat"
+                        >
+                          {orderInfo.status}
+                        </Chip>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Amount</p>
+                        <p className="font-semibold text-sm">Kshs {parseFloat(orderInfo.payable_amount || orderInfo.total_amount || 0).toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Date</p>
+                        <p className="font-semibold text-sm">
+                          {orderInfo.created_at ? new Date(orderInfo.created_at).toLocaleDateString() : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+                  </CardBody>
+                </Card>
+
+                {/* Customer & Delivery Info Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Customer Info */}
+                  <Card className="border shadow-sm">
+                    <CardBody className="p-4">
+                      <h3 className="font-semibold text-sm mb-3 flex items-center justify-between">
+                        <span>Customer Information</span>
+                      </h3>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                            <span className="text-blue-600 font-semibold text-sm">
+                              {customerInfo?.name?.charAt(0) || 'C'}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm">{customerInfo?.name || 'Customer'}</p>
+                            {customerInfo?.phone && (
+                              <p className="text-xs text-gray-600">{customerInfo.phone}</p>
+                            )}
+                          </div>
+                        </div>
+                        {customerInfo?.address && (
+                          <div className="text-xs text-gray-600 mt-2">
+                            <span className="font-medium">Address: </span>
+                            {customerInfo.address}
+                          </div>
+                        )}
+                      </div>
+                    </CardBody>
+                  </Card>
+
+                  {/* Delivery Info */}
+                  <Card className="border shadow-sm">
+                    <CardBody className="p-4">
+                      <h3 className="font-semibold text-sm mb-3">Delivery Information</h3>
+                      {orderInfo.delivery ? (
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <p className="text-xs text-gray-500">Status</p>
+                              <Chip
+                                size="sm"
+                                color={
+                                  orderInfo.delivery.status === 'delivered' ? 'success' :
+                                    orderInfo.delivery.status === 'pending' ? 'warning' :
+                                      orderInfo.delivery.status === 'in_transit' ? 'primary' : 'default'
+                                }
+                                variant="flat"
+                                className="mt-1"
+                              >
+                                {orderInfo.delivery.status}
+                              </Chip>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500">OTP Verified</p>
+                              <Chip
+                                size="sm"
+                                color={orderInfo.delivery.otp_verified ? 'success' : 'warning'}
+                                variant="flat"
+                                className="mt-1"
+                              >
+                                {orderInfo.delivery.otp_verified ? 'Yes' : 'No'}
+                              </Chip>
+                            </div>
+                          </div>
+                          {orderInfo.delivery.delivery_date && (
+                            <div className="text-xs">
+                              <span className="text-gray-500">Delivery Date: </span>
+                              <span className="font-medium">
+                                {new Date(orderInfo.delivery.delivery_date).toLocaleDateString()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-500">No delivery information available</p>
+                      )}
+                    </CardBody>
+                  </Card>
+                </div>
+
+                {/* Delivery Items Section */}
+                {items.length > 0 && (
+                  <Card className="border shadow-sm">
+                    <CardBody className="p-4">
+                      <div className="flex justify-between items-center mb-3">
+                        <h3 className="font-semibold text-sm">
+                          Delivery Items ({items.length})
+                        </h3>
+                        <Chip color="primary" variant="flat" size="sm">
+                          {items.filter(i => i.confirmed).length} selected
+                        </Chip>
+                      </div>
+                      <div className="space-y-2">
+                        {items.map((item, index) => (
+                          <div key={item.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <div className="flex items-center gap-3 flex-1">
+                              <Checkbox
+                                isSelected={item.confirmed}
+                                onValueChange={(checked) => {
+                                  const updated = [...items];
+                                  updated[index].confirmed = checked;
+                                  setItems(updated);
+                                }}
+                                isDisabled={otpSent || deliveryCompleted}
+                                color="success"
+                                size="sm"
+                              />
+                              <div className="w-10 h-10 bg-blue-100 rounded flex items-center justify-center">
+                                <span className="text-blue-600 font-semibold text-sm">
+                                  {item.name.charAt(0)}
+                                </span>
+                              </div>
+                              <div className="flex-1">
+                                <p className="font-medium text-sm">{item.name}</p>
+                                <div className="flex items-center gap-3 mt-1">
+                                  <span className="text-xs text-gray-600">
+                                    Qty: {item.quantity} {item.unit}
+                                  </span>
+                                  <span className="text-xs font-medium text-green-600">
+                                    Kshs {item.price.toLocaleString()}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs font-medium">
+                                Kshs {(item.price * item.quantity).toLocaleString()}
+                              </p>
+                              <p className="text-xs text-gray-500">Total</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardBody>
+                  </Card>
                 )}
-              </div>
 
-              <div className="mb-4 max-h-60 overflow-y-auto">
-                {items.map((item) => (
-                  <label key={item.id} className="flex items-center justify-between mb-2 p-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded cursor-pointer text-gray-900 dark:text-gray-100">
-                    <div className="flex items-center flex-1">
-                      <input
-                        type="checkbox"
-                        checked={item.confirmed}
-                        onChange={() => toggleItem(item.id)}
-                        className="mr-2 w-4 h-4"
-                      />
-                      <span className="flex-1">{item.name}</span>
-                    </div>
-                    <div className="text-right text-sm text-gray-600 dark:text-gray-400 ml-4">
-                      <div>{item.quantity || 1} {item.unit || "unit"}{((item.quantity || 1) > 1) ? "s" : ""}</div>
-                      <div className="font-semibold">KES {((item.price || 0) * (item.quantity || 1)).toLocaleString()}</div>
-                    </div>
-                  </label>
-                ))}
-              </div>
-
-              {items.length > 0 && (
-                <button
-                  onClick={handleAcceptDelivery}
-                  disabled={otpLoading || items.filter(item => item.confirmed).length === 0}
-                  className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white py-2 px-4 rounded font-semibold"
-                >
-                  {otpLoading ? "Generating OTP..." : "Generate OTP & Continue"}
-                </button>
-              )}
-
-              <button
-                onClick={onClose}
-                className="font-semibold w-full mt-2 bg-red-700 hover:bg-red-400 dark:bg-red-700 dark:hover:bg-red-600 text-white dark:text-white py-2 px-4 rounded"
-              >
-                Cancel
-              </button>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Delivery Note */}
-      <AnimatePresence>
-        {showDeliveryNote && deliveryNoteData && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              className="delivery-note-print bg-white dark:bg-gray-800 p-10 rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto"
-            >
-              {/* Corporate Header with Logo */}
-              <div className="mb-8 border-b-4 border-gray-800 dark:border-gray-200 pb-6">
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-4">
-                    <img
-                      src="/images/logo.jpg"
-                      alt="Almon Products Ltd Logo"
-                      className="w-24 h-24 object-contain rounded-lg shadow-md"
-                    />
-                    <div>
-                      <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">
-                        ALMON PRODUCTS LTD
-                      </h1>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                        Premium Materials & Branding Solutions
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                        Nairobi, Kenya | Email: info@almonproducts.com | Tel: +254 XXX XXX XXX
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right border-l-2 border-gray-300 dark:border-gray-600 pl-6">
-                    <p className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-2">DELIVERY NOTE</p>
-                    <p className="text-xs text-gray-600 dark:text-gray-400">Document No: DN-{new Date().getTime().toString().slice(-6)}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Order Information Section */}
-              <div className="mb-6 grid grid-cols-2 gap-6">
-                <div className="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-lg border border-gray-200 dark:border-gray-600">
-                  <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
-                    Order Information
-                  </h3>
-                  <p className="text-sm text-gray-700 dark:text-gray-300">
-                    <span className="font-semibold">Order Number:</span> {deliveryNoteData.orderNumber}
-                  </p>
-                  <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
-                    <span className="font-semibold">Delivery Date:</span> {deliveryNoteData.date}
-                  </p>
-                </div>
-                <div className="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-lg border border-gray-200 dark:border-gray-600">
-                  <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
-                    Delivery Status
-                  </h3>
-                  {deliveryNoteData.missingItems.length > 0 ? (
-                    <p className="text-sm text-yellow-700 dark:text-yellow-300 font-semibold">
-                      ⚠️ INCOMPLETE DELIVERY
-                    </p>
-                  ) : (
-                    <p className="text-sm text-green-700 dark:text-green-300 font-semibold">
-                      ✅ COMPLETE DELIVERY
-                    </p>
-                  )}
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                    {deliveryNoteData.receivedItems.length} of {deliveryNoteData.receivedItems.length + deliveryNoteData.missingItems.length} items received
-                  </p>
-                </div>
-              </div>
-
-              {/* Received Items Table */}
-              {deliveryNoteData.receivedItems.length > 0 && (
-                <div className="mb-8">
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-4 uppercase tracking-wide border-b-2 border-gray-300 dark:border-gray-600 pb-2">
-                    Items Received
-                  </h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse border border-gray-300 dark:border-gray-600">
-                      <thead>
-                        <tr className="bg-gray-800 dark:bg-gray-700 text-white">
-                          <th className="border border-gray-300 dark:border-gray-600 px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">
-                            #
-                          </th>
-                          <th className="border border-gray-300 dark:border-gray-600 px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">
-                            Item Description
-                          </th>
-                          <th className="border border-gray-300 dark:border-gray-600 px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">
-                            Quantity
-                          </th>
-                          <th className="border border-gray-300 dark:border-gray-600 px-4 py-3 text-right text-xs font-bold uppercase tracking-wider">
-                            Unit Price (KES)
-                          </th>
-                          <th className="border border-gray-300 dark:border-gray-600 px-4 py-3 text-right text-xs font-bold uppercase tracking-wider">
-                            Total (KES)
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {deliveryNoteData.receivedItems.map((item, index) => {
-                          const itemTotal = (item.price || 0) * (item.quantity || 1);
-                          return (
-                            <tr
-                              key={item.id}
-                              className={`${index % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-700/50'} hover:bg-gray-100 dark:hover:bg-gray-700`}
-                            >
-                              <td className="border border-gray-300 dark:border-gray-600 px-4 py-3 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                                {index + 1}
-                              </td>
-                              <td className="border border-gray-300 dark:border-gray-600 px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
-                                {item.name}
-                              </td>
-                              <td className="border border-gray-300 dark:border-gray-600 px-4 py-3 text-sm text-center text-gray-700 dark:text-gray-300">
-                                {item.quantity || 1} {item.unit || "unit"}{((item.quantity || 1) > 1) ? "s" : ""}
-                              </td>
-                              <td className="border border-gray-300 dark:border-gray-600 px-4 py-3 text-sm text-right text-gray-700 dark:text-gray-300">
-                                {(item.price || 0).toLocaleString()}
-                              </td>
-                              <td className="border border-gray-300 dark:border-gray-600 px-4 py-3 text-sm text-right font-semibold text-green-700 dark:text-green-400">
-                                {itemTotal.toLocaleString()}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        <tr className="bg-gray-100 dark:bg-gray-700 font-bold">
-                          <td colSpan={4} className="border border-gray-300 dark:border-gray-600 px-4 py-3 text-right text-sm text-gray-900 dark:text-gray-100">
-                            Subtotal (Received):
-                          </td>
-                          <td className="border border-gray-300 dark:border-gray-600 px-4 py-3 text-right text-sm text-gray-900 dark:text-gray-100">
-                            {deliveryNoteData.receivedItems.reduce((sum, item) => sum + ((item.price || 0) * (item.quantity || 1)), 0).toLocaleString()}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Missing Items Table (if any) */}
-              {deliveryNoteData.missingItems.length > 0 && (
-                <div className="mb-8">
-                  <h3 className="text-lg font-bold text-red-600 dark:text-red-400 mb-4 uppercase tracking-wide border-b-2 border-red-300 dark:border-red-600 pb-2">
-                    Items Not Received
-                  </h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse border border-red-300 dark:border-red-600">
-                      <thead>
-                        <tr className="bg-red-800 dark:bg-red-900 text-white">
-                          <th className="border border-red-300 dark:border-red-600 px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">
-                            #
-                          </th>
-                          <th className="border border-red-300 dark:border-red-600 px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">
-                            Item Description
-                          </th>
-                          <th className="border border-red-300 dark:border-red-600 px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">
-                            Quantity
-                          </th>
-                          <th className="border border-red-300 dark:border-red-600 px-4 py-3 text-right text-xs font-bold uppercase tracking-wider">
-                            Unit Price (KES)
-                          </th>
-                          <th className="border border-red-300 dark:border-red-600 px-4 py-3 text-right text-xs font-bold uppercase tracking-wider">
-                            Total (KES)
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {deliveryNoteData.missingItems.map((item, index) => {
-                          const itemTotal = (item.price || 0) * (item.quantity || 1);
-                          return (
-                            <tr
-                              key={item.id}
-                              className={`${index % 2 === 0 ? 'bg-red-50 dark:bg-red-900/20' : 'bg-red-100/50 dark:bg-red-900/30'} hover:bg-red-100 dark:hover:bg-red-900/40`}
-                            >
-                              <td className="border border-red-300 dark:border-red-600 px-4 py-3 text-sm font-semibold text-red-700 dark:text-red-300">
-                                {index + 1}
-                              </td>
-                              <td className="border border-red-300 dark:border-red-600 px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
-                                {item.name}
-                              </td>
-                              <td className="border border-red-300 dark:border-red-600 px-4 py-3 text-sm text-center text-gray-700 dark:text-gray-300">
-                                {item.quantity || 1} {item.unit || "unit"}{((item.quantity || 1) > 1) ? "s" : ""}
-                              </td>
-                              <td className="border border-red-300 dark:border-red-600 px-4 py-3 text-sm text-right text-gray-700 dark:text-gray-300">
-                                {(item.price || 0).toLocaleString()}
-                              </td>
-                              <td className="border border-red-300 dark:border-red-600 px-4 py-3 text-sm text-right font-semibold text-red-700 dark:text-red-400">
-                                {itemTotal.toLocaleString()}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        <tr className="bg-red-100 dark:bg-red-900/40 font-bold">
-                          <td colSpan={4} className="border border-red-300 dark:border-red-600 px-4 py-3 text-right text-sm text-red-800 dark:text-red-300">
-                            Subtotal (Missing):
-                          </td>
-                          <td className="border border-red-300 dark:border-red-600 px-4 py-3 text-right text-sm text-red-800 dark:text-red-300">
-                            {deliveryNoteData.missingItems.reduce((sum, item) => sum + ((item.price || 0) * (item.quantity || 1)), 0).toLocaleString()}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Financial Summary */}
-              <div className="mt-8 mb-6">
-                <div className="flex justify-end">
-                  <div className="w-80 border-2 border-gray-800 dark:border-gray-200">
-                    <table className="w-full">
-                      <tbody>
-                        <tr className="bg-gray-100 dark:bg-gray-700">
-                          <td className="px-4 py-2 text-sm font-semibold text-gray-700 dark:text-gray-300 border-b border-gray-300 dark:border-gray-600">
-                            Total Received:
-                          </td>
-                          <td className="px-4 py-2 text-sm font-bold text-right text-gray-900 dark:text-gray-100 border-b border-gray-300 dark:border-gray-600">
-                            KES {deliveryNoteData.receivedItems.reduce((sum, item) => sum + ((item.price || 0) * (item.quantity || 1)), 0).toLocaleString()}
-                          </td>
-                        </tr>
-                        {deliveryNoteData.missingItems.length > 0 && (
-                          <tr className="bg-red-50 dark:bg-red-900/20">
-                            <td className="px-4 py-2 text-sm font-semibold text-red-700 dark:text-red-300 border-b border-gray-300 dark:border-gray-600">
-                              Total Missing:
-                            </td>
-                            <td className="px-4 py-2 text-sm font-bold text-right text-red-700 dark:text-red-300 border-b border-gray-300 dark:border-gray-600">
-                              KES {deliveryNoteData.missingItems.reduce((sum, item) => sum + ((item.price || 0) * (item.quantity || 1)), 0).toLocaleString()}
-                            </td>
-                          </tr>
-                        )}
-                        <tr className="bg-gray-800 dark:bg-gray-700 text-white">
-                          <td className="px-4 py-3 text-base font-bold uppercase tracking-wide">
-                            Order Total:
-                          </td>
-                          <td className="px-4 py-3 text-base font-bold text-right">
-                            KES {(deliveryNoteData.receivedItems.reduce((sum, item) => sum + ((item.price || 0) * (item.quantity || 1)), 0) +
-                              deliveryNoteData.missingItems.reduce((sum, item) => sum + ((item.price || 0) * (item.quantity || 1)), 0)).toLocaleString()}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-
-              {/* OTP Verification Section */}
-              <div className="mt-8 mb-6 grid grid-cols-2 gap-8 border-t-2 border-gray-300 dark:border-gray-600 pt-6">
-                <div>
-                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">
-                    OTP Verification
-                  </p>
-                  {otpSent ? (
-                    <>
-                      <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                        <p className="text-sm text-blue-800 dark:text-blue-200 font-semibold mb-1">
-                          ✓ OTP Sent Successfully
-                        </p>
-                        <p className="text-xs text-blue-700 dark:text-blue-300">
-                          An OTP has been sent to {phoneNumber ? phoneNumber.replace(/(\d{3})(\d{3})(\d{4})/, '$1***$3') : 'your registered phone number'}
-                        </p>
-                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
-                          Please check your phone and enter the 6-digit OTP below to complete delivery.
-                        </p>
-                      </div>
-                      <div className="mb-2">
-                        <input
-                          type="text"
-                          placeholder="Enter 6-digit OTP"
-                          value={otp}
-                          onChange={(e) => {
-                            const value = e.target.value.replace(/\D/g, '').slice(0, 6);
-                            setOtp(value);
-                            setOtpError("");
-                          }}
-                          maxLength={6}
-                          className="w-full px-4 py-3 text-lg text-center border-2 border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100 font-mono tracking-widest"
-                        />
-                        {otpError && (
-                          <p className="text-red-500 text-sm mt-2">{otpError}</p>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                      <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                        Please select the items that have been delivered and click "Generate OTP" to receive an OTP on your phone.
-                      </p>
-                    </div>
-                  )}
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-                    <span className="font-semibold">Date:</span> {(() => {
-                      const dateStr = deliveryNoteData.date;
-                      const dateOnly = dateStr.includes(',') ? dateStr.split(',')[0] : dateStr.split(' at ')[0];
-                      return dateOnly || new Date().toLocaleDateString("en-US", {
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric"
-                      });
-                    })()}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">
-                    Authorized Representative
-                  </p>
-                  <div className="border-b-2 border-gray-400 dark:border-gray-500 h-12 mb-2 flex items-center justify-center">
-                    <span className="text-gray-800 dark:text-gray-200 font-bold text-base italic tracking-wide">
-                      Almon Products Ltd
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-                    <span className="font-semibold">Name:</span> Almon Products Ltd
-                  </p>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                    <span className="font-semibold">Date:</span> {(() => {
-                      const dateStr = deliveryNoteData.date;
-                      // Extract date part (before comma if time is included)
-                      const dateOnly = dateStr.includes(',') ? dateStr.split(',')[0] : dateStr.split(' at ')[0];
-                      return dateOnly || new Date().toLocaleDateString("en-US", {
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric"
-                      });
-                    })()}
-                  </p>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="mt-8 pt-6 border-t-4 border-gray-800 dark:border-gray-200">
-                <div className="text-center">
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
-                    This delivery note serves as official confirmation of items received by the customer.
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-500 font-semibold">
-                    ALMON PRODUCTS LTD | Premium Branding Materials & Solutions
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                    Document Generated: {deliveryNoteData.date} | This is a computer-generated document.
-                  </p>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="mt-6 space-y-3">
-                {!deliveryCompleted ? (
-                  <>
-                    <button
-                      onClick={handleCompleteDelivery}
-                      disabled={!otpSent || !otp || otp.length !== 6 || verifyingOtp}
-                      className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white py-3 px-4 rounded font-semibold text-lg"
+                {/* Action Buttons */}
+                {!otpSent && !deliveryCompleted && items.length > 0 && (
+                  <div className="pt-2">
+                    <Button
+                      color="success"
+                      onClick={generateOtpForDelivery}
+                      isDisabled={otpLoading || items.filter(i => i.confirmed).length === 0}
+                      isLoading={otpLoading}
+                      className="w-full"
+                      size="lg"
                     >
-                      {verifyingOtp
-                        ? "Verifying OTP..."
-                        : !otpSent
-                          ? "Please generate OTP first"
-                          : !otp || otp.length !== 6
-                            ? "Please enter the 6-digit OTP"
-                            : "✓ Complete Delivery"}
-                    </button>
-                    <div className="flex gap-3">
-                      <button
-                        onClick={handleBackToEdit}
-                        className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white py-2 px-4 rounded font-semibold"
-                      >
-                        ← Back to Edit Items
-                      </button>
-                      <button
-                        onClick={handleCloseDeliveryNote}
-                        className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded font-semibold"
-                      >
-                        Cancel
-                      </button>
+                      {otpLoading ? "Generating OTP..." : "Generate OTP & Confirm Delivery"}
+                    </Button>
+                    <p className="text-xs text-gray-500 text-center mt-2">
+                      OTP will be sent to customer's registered phone/email
+                    </p>
+                  </div>
+                )}
+
+                {/* Delivery Completed Message */}
+                {deliveryCompleted && (
+                  <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center">
+                        <span className="text-white text-sm">✓</span>
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-sm">Delivery Confirmed!</h3>
+                        <p className="text-xs text-gray-600 mt-1">
+                          Delivery ID: <span className="font-mono">{deliveryId}</span> completed successfully.
+                        </p>
+                      </div>
                     </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="bg-green-50 dark:bg-green-900/20 border-2 border-green-500 rounded-lg p-4 mb-4">
-                      <p className="text-green-800 dark:text-green-200 font-semibold text-center">
-                        ✅ Delivery Completed Successfully!
-                      </p>
-                      <p className="text-sm text-green-700 dark:text-green-300 text-center mt-1">
-                        You can now download or print your delivery note.
-                      </p>
-                    </div>
-                    <div className="flex gap-3">
-                      <button
-                        onClick={handlePrintDeliveryNote}
-                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded font-semibold text-lg"
-                      >
-                        📄 Print / Save PDF
-                      </button>
-                      <button
-                        onClick={handleCloseDeliveryNote}
-                        className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded font-semibold"
-                      >
-                        Close
-                      </button>
-                    </div>
-                  </>
+                  </div>
                 )}
               </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+            )}
+          </ModalBody>
+
+          <ModalFooter className="border-t pt-4">
+            <Button
+              color="default"
+              variant="light"
+              onClick={onClose}
+              className="flex-1"
+            >
+              {deliveryCompleted ? "Close" : "Cancel"}
+            </Button>
+            {!deliveryCompleted && orderInfo && items.length > 0 && (
+              <Button
+                color="primary"
+                variant="solid"
+                onClick={generateOtpForDelivery}
+                isDisabled={otpSent || items.filter(i => i.confirmed).length === 0}
+                className="flex-1"
+              >
+                Confirm Delivery
+              </Button>
+            )}
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* OTP Modal */}
+      <Modal
+        isOpen={showDeliveryNote && !deliveryCompleted}
+        onClose={() => !otpLoading && setShowDeliveryNote(false)}
+        size="sm"
+      >
+        <ModalContent>
+          <ModalHeader className="flex flex-col gap-1">
+            <h3 className="text-lg font-semibold">Enter OTP</h3>
+            <p className="text-sm text-gray-500">Enter 6-digit OTP sent to customer</p>
+          </ModalHeader>
+          <ModalBody>
+            <div className="space-y-4">
+              <div className="text-center">
+                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <p className="text-sm text-gray-600">
+                  Please enter the 6-digit OTP sent to the customer
+                </p>
+                {customerInfo?.phone && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Sent to: {customerInfo.phone}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Input
+                  label="6-digit OTP"
+                  placeholder="000000"
+                  value={otp}
+                  maxLength={6}
+                  onChange={(e) => {
+                    setOtp(e.target.value.replace(/\D/g, ''));
+                    setOtpError("");
+                  }}
+                  isDisabled={otpLoading}
+                  className="text-center text-xl font-mono"
+                  variant="bordered"
+                  autoFocus
+                  type="text"
+                  inputMode="numeric"
+                />
+
+                <div className="flex justify-center gap-1">
+                  {[1, 2, 3, 4, 5, 6].map((pos) => (
+                    <div
+                      key={pos}
+                      className={`w-2 h-2 rounded-full ${otp.length >= pos ? 'bg-blue-600' : 'bg-gray-300'}`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {otpError && (
+                <div className="p-2 bg-red-50 text-red-700 rounded text-sm">
+                  {otpError}
+                </div>
+              )}
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              color="default"
+              variant="light"
+              onClick={() => setShowDeliveryNote(false)}
+              isDisabled={otpLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              color="success"
+              onClick={verifyOtpAndCompleteDelivery}
+              isDisabled={otp.length !== 6 || otpLoading}
+              isLoading={otpLoading}
+            >
+              Complete Delivery
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </>
   );
-};
-
+}

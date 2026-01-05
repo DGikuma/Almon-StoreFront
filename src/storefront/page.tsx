@@ -832,17 +832,84 @@ export default function StorefrontPage() {
               {/* Delivery */}
               <button
                 onClick={() => setDeliveryModalOpen(true)}
-                className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-lg font-medium border border-white/10 bg-gradient-to-b from-white/6 to-transparent text-slate-50 hover:shadow-md"
+                className="group relative hidden sm:inline-flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all duration-400 ease-out hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-xl active:shadow-md overflow-hidden"
+                style={{
+                  background: `
+      linear-gradient(135deg, 
+        #667eea 0%, 
+        #764ba2 25%, 
+        #f093fb 50%, 
+        #f5576c 75%, 
+        #ff8a00 100%
+      )
+    `,
+                  backgroundSize: '300% 300%',
+                  backgroundPosition: '0% 50%',
+                }}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"
-                  />
-                </svg>
-                <span>Delivery</span>
+                {/* Animated background on hover */}
+                <span
+                  className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700"
+                  style={{
+                    background: `
+        linear-gradient(135deg, 
+          #667eea 0%, 
+          #764ba2 25%, 
+          #f093fb 50%, 
+          #f5576c 75%, 
+          #ff8a00 100%
+        )
+      `,
+                    backgroundSize: '300% 300%',
+                    animation: 'gradientShift 3s ease infinite',
+                  }}
+                />
+
+                {/* Glow effect */}
+                <span className="absolute inset-0 rounded-xl bg-gradient-to-r from-white/20 via-transparent to-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+
+                {/* Inner container for content */}
+                <span className="relative z-10 flex items-center gap-2">
+                  {/* Animated icon */}
+                  <span className="relative">
+                    <svg
+                      className="w-5 h-5 text-white transform group-hover:scale-110 group-hover:rotate-12 transition-transform duration-300"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      strokeWidth="2"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+                      />
+                    </svg>
+
+                    {/* Pulsing dot */}
+                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+                  </span>
+
+                  {/* Text with gradient */}
+                  <span className="bg-gradient-to-r from-white via-gray-50 to-white bg-clip-text text-transparent font-semibold tracking-wide">
+                    Delivery
+                  </span>
+
+                  {/* Chevron for interaction hint */}
+                  <svg
+                    className="w-4 h-4 text-white/80 transform group-hover:translate-x-1 transition-transform duration-300"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth="2"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </span>
+
+                {/* Floating particles - for extra flair */}
+                <span className="absolute -top-2 -right-2 w-4 h-4 rounded-full bg-yellow-400/30 blur-sm group-hover:animate-ping" />
+                <span className="absolute -bottom-2 -left-2 w-3 h-3 rounded-full bg-cyan-400/30 blur-sm group-hover:animate-ping" style={{ animationDelay: '0.2s' }} />
               </button>
 
               {/* Cart */}

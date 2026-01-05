@@ -19,8 +19,13 @@
 }
 
 @keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 /* Tab-specific gradients */
@@ -93,5 +98,58 @@
 
   .delivery-note-print .bg-black\/50 {
     background: transparent !important;
+  }
+
+  @keyframes gradientShift {
+
+    0%,
+    100% {
+      background-position: 0% 50%;
+    }
+
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+
+  @keyframes float {
+
+    0%,
+    100% {
+      transform: translateY(0px);
+    }
+
+    50% {
+      transform: translateY(-5px);
+    }
+  }
+
+  /* Optional: Add a bounce animation for the icon */
+  @keyframes bounce {
+
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+
+    50% {
+      transform: translateY(-3px);
+    }
+  }
+
+  /* Add subtle animation to the button itself */
+  .group:hover {
+    animation: gradientShift 2s ease infinite;
+  }
+
+  /* For dark theme compatibility */
+  @media (prefers-color-scheme: dark) {
+    .group {
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    .group:hover {
+      box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4);
+    }
   }
 }
