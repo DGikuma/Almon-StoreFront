@@ -234,10 +234,11 @@ export function ConfirmDeliveryModal({ isOpen, onClose }: ConfirmDeliveryModalPr
         isOpen={isOpen}
         onClose={onClose}
         size="3xl"
-        className="max-h-[85vh]"
+        className="max-h-[90vh]" // Changed from 85vh to 90vh for more space
+        scrollBehavior="inside" // This enables internal scrolling
       >
-        <ModalContent>
-          <ModalHeader className="border-b pb-3">
+        <ModalContent className="max-h-[90vh] overflow-hidden flex flex-col">
+          <ModalHeader className="border-b pb-3 flex-shrink-0">
             <div className="w-full">
               <h2 className="text-xl font-bold">Confirm Delivery</h2>
               <p className="text-sm text-gray-500 mt-1">
@@ -246,7 +247,7 @@ export function ConfirmDeliveryModal({ isOpen, onClose }: ConfirmDeliveryModalPr
             </div>
           </ModalHeader>
 
-          <ModalBody className="pt-4">
+          <ModalBody className="pt-4 overflow-y-auto flex-grow">
             {/* Delivery ID Input Section */}
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -433,7 +434,7 @@ export function ConfirmDeliveryModal({ isOpen, onClose }: ConfirmDeliveryModalPr
                           {items.filter(i => i.confirmed).length} selected
                         </Chip>
                       </div>
-                      <div className="space-y-2">
+                      <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2" style={{ scrollbarWidth: 'thin' }}>
                         {items.map((item, index) => (
                           <div key={item.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                             <div className="flex items-center gap-3 flex-1">
@@ -517,7 +518,7 @@ export function ConfirmDeliveryModal({ isOpen, onClose }: ConfirmDeliveryModalPr
             )}
           </ModalBody>
 
-          <ModalFooter className="border-t pt-4">
+          <ModalFooter className="border-t pt-4 flex-shrink-0">
             <Button
               color="default"
               variant="light"

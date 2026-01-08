@@ -16,19 +16,19 @@ interface CartItem {
 interface CheckoutModalProps {
   isOpen: boolean;
   onClose: () => void;
-  total: number;  // This should be subtotal + delivery fee
+  total: number;
   cartItems: CartItem[];
   productSaleType: Record<string, "roll" | "metre" | "board" | "unit">;
   storeId?: string;
-  deliveryFee?: number;  // Add this prop
-  deliveryArea?: string; // Add this prop
+  deliveryFee?: number;
+  deliveryArea?: string;
   onOrderSubmit?: (orderData: any) => Promise<{ sale_id?: string } | void>;
+  onCheckoutSuccess?: () => void; // New prop for successful checkout
+  onClearCart?: () => void; // New prop for clearing cart
 }
 
-// API base URL - configure this properly
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://ecommerce-backend-snc5.onrender.com';
 
-// Map variant names to API unit format
 const mapVariantToUnit = (variant: string, saleType: "roll" | "metre" | "board" | "unit"): string => {
   const variantLower = variant.toLowerCase();
   if (variantLower.includes("roll")) return "roll";
@@ -45,7 +45,6 @@ const mapVariantToUnit = (variant: string, saleType: "roll" | "metre" | "board" 
   }
 };
 
-// Helper function to ensure sale_id starts with "SAL"
 const normalizeSaleId = (saleId: string | null | undefined): string | null => {
   if (!saleId) return null;
 
@@ -62,7 +61,6 @@ const normalizeSaleId = (saleId: string | null | undefined): string | null => {
   return `SAL${saleStr}`;
 };
 
-// Format phone number for M-Pesa
 const formatPhoneForMpesa = (phone: string): string => {
   let cleaned = phone.replace(/\D/g, '');
 
@@ -85,10 +83,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   total,
   cartItems,
   productSaleType,
-  storeId = "STR251100001", // Changed default to match storefront
+  storeId = "STR251100001",
   deliveryFee = 0,
   deliveryArea = "",
-  onOrderSubmit
+  onOrderSubmit,
+  onCheckoutSuccess,
+  onClearCart
 }) => {
   const [customerName, setCustomerName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -100,12 +100,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info' | 'warning', message: string } | null>(null);
 
-  // Calculate subtotal from cart items
   const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+  // Reset form function
+  const resetForm = () => {
+    setCustomerName("");
+    setPhoneNumber("");
+    setRecipientName("");
+    setRecipientPhone("");
+    setRecipientEmail("");
+    setDeliveryAddress("");
+    setStatus(null);
+  };
+
+  // Handle modal close with form reset
+  const handleModalClose = () => {
+    resetForm();
+    onClose();
+  };
 
   const formatOrderData = () => {
     const products = cartItems.map((item) => {
-      // Use productId if available, otherwise use the id
       let productId = item.productId || item.id;
       if (productId && typeof productId === 'string') {
         productId = productId.toUpperCase();
@@ -141,10 +156,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   };
 
   const handleSubmit = async () => {
-    // Reset status
     setStatus(null);
 
-    // Validation
     if (!customerName || !phoneNumber || !recipientName || !recipientPhone || !deliveryAddress) {
       setStatus({
         type: 'error',
@@ -161,7 +174,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       return;
     }
 
-    // Phone validation
     const phoneRegex = /^(?:254|\+254|0)?[7]\d{8}$/;
     if (!phoneRegex.test(phoneNumber)) {
       setStatus({
@@ -227,17 +239,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               message: `Payment initiated successfully! Check your phone ${formattedPhone} to complete payment. Order ID: ${saleId}`
             });
 
+            // Call success callbacks
+            if (onCheckoutSuccess) {
+              onCheckoutSuccess();
+            }
+
+            // Clear cart if callback provided
+            if (onClearCart) {
+              onClearCart();
+            }
+
             // Close modal after delay
             setTimeout(() => {
-              onClose();
-              // Reset form
-              setCustomerName("");
-              setPhoneNumber("");
-              setRecipientName("");
-              setRecipientPhone("");
-              setRecipientEmail("");
-              setDeliveryAddress("");
-              setStatus(null);
+              handleModalClose();
             }, 5000);
           } else {
             throw new Error(stkRes.data.errorMessage || "STK push failed");
@@ -269,7 +283,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="2xl" scrollBehavior="inside">
+    <Modal isOpen={isOpen} onClose={handleModalClose} size="2xl" scrollBehavior="inside">
       <ModalContent className="bg-gradient-to-br from-white to-blue-50 dark:from-gray-900 dark:to-gray-800">
         <ModalHeader className="text-xl font-bold text-gray-900 dark:text-white">
           Complete Your Purchase
@@ -369,7 +383,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           )}
         </ModalBody>
         <ModalFooter>
-          <Button variant="flat" onPress={onClose} isDisabled={loading}>
+          <Button variant="flat" onPress={handleModalClose} isDisabled={loading}>
             Cancel
           </Button>
           <Button
