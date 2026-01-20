@@ -871,7 +871,7 @@ export default function StorefrontPage() {
                 base: "w-full",
                 tabList: "gap-2 w-full relative rounded-2xl p-2 bg-gradient-to-r from-gray-100 to-gray-50/50 dark:from-gray-900 dark:to-gray-800/50 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50",
                 tab: "h-14 px-8 rounded-xl data-[selected=true]:bg-white dark:data-[selected=true]:bg-gray-800 data-[selected=true]:shadow-2xl transition-all duration-300",
-                tabContent: "group-data-[selected=true]:text-blue-600 dark:group-data-[selected=true]:text-blue-400 font-semibold text-sm uppercase tracking-wider"
+                tabContent: "font-semibold text-sm uppercase tracking-wider text-gray-800 dark:text-gray-200 group-data-[selected=true]:text-blue-600 dark:group-data-[selected=true]:text-blue-400"
               }}
             >
               {(["roll", "metre", "board", "unit"] as const).map((tabKey) => {
