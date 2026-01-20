@@ -517,7 +517,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                         <div className="grid md:grid-cols-2 gap-4">
                           <Input
-                            label="Your Name"
                             placeholder="John Doe"
                             value={customerName}
                             onChange={(e) => setCustomerName(e.target.value)}
