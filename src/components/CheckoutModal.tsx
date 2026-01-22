@@ -9,7 +9,6 @@ import {
   ModalFooter,
   Input,
   Button,
-  Textarea,
   Divider,
   Badge,
   Card,
@@ -20,10 +19,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { PaymentConfirmationModal } from "./PaymentConfirmationModal";
 import {
   CreditCardIcon,
-  BuildingOfficeIcon,
   UserCircleIcon,
   PhoneIcon,
-  EnvelopeIcon,
   MapPinIcon,
   TruckIcon,
   ShieldCheckIcon,
@@ -123,16 +120,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onCheckoutSuccess,
   onClearCart
 }) => {
-  // Form states
+  // Form states (only required fields)
   const [customerName, setCustomerName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [recipientName, setRecipientName] = useState("");
   const [recipientPhone, setRecipientPhone] = useState("");
-  const [recipientEmail, setRecipientEmail] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
-  const [companyName, setCompanyName] = useState("");
-  const [poNumber, setPoNumber] = useState("");
-  const [notes, setNotes] = useState("");
 
   // Loading and status states
   const [loading, setLoading] = useState(false);
@@ -141,6 +134,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   // Order and payment states
   const [saleId, setSaleId] = useState<string | null>(null);
   const [checkoutRequestId, setCheckoutRequestId] = useState<string | null>(null);
+  const [existingOrderData, setExistingOrderData] = useState<any>(null);
 
   // Modal states
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -156,14 +150,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setPhoneNumber("");
     setRecipientName("");
     setRecipientPhone("");
-    setRecipientEmail("");
     setDeliveryAddress("");
-    setCompanyName("");
-    setPoNumber("");
-    setNotes("");
     setStatus(null);
     setSaleId(null);
     setCheckoutRequestId(null);
+    setExistingOrderData(null);
     setActiveStep('details');
   };
 
@@ -195,15 +186,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       delivery: {
         recipient_name: recipientName,
         recipient_phone: recipientPhone,
-        recipient_email: recipientEmail || "",
+        recipient_email: "",
         delivery_address: deliveryAddress,
         delivery_area: deliveryArea,
         delivery_fee: deliveryFee
       },
       enterprise_info: {
-        company_name: companyName || "",
-        po_number: poNumber || "",
-        special_notes: notes || ""
+        company_name: "",
+        po_number: "",
+        special_notes: ""
       },
       payment_method: "mpesa",
       phone_number: phoneNumber,
@@ -215,49 +206,153 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     };
   };
 
+  // Check if order already exists with completed payment
+  const checkExistingOrder = async (orderId: string): Promise<{ exists: boolean; data?: any; hasCompletedPayment?: boolean }> => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/customer/orders/${orderId}`);
+      const orderData = response.data;
+
+      // Check if order has completed payments
+      const hasCompletedPayment = orderData.payments?.some((payment: any) =>
+        payment.status === 'completed' || payment.status === 'paid'
+      );
+
+      return {
+        exists: true,
+        data: orderData,
+        hasCompletedPayment
+      };
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        return { exists: false };
+      }
+      return { exists: false };
+    }
+  };
+
+  // Fix order status if payment is completed but order is pending
+  const fixOrderStatus = async (orderId: string, mpesaReceipt: string): Promise<boolean> => {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/customer/orders/${orderId}/mark-paid`, {
+        mpesa_receipt: mpesaReceipt,
+        payment_method: 'mpesa'
+      });
+      return response.status === 200 || response.status === 201;
+    } catch (error: any) {
+      console.error("Error fixing order status:", error);
+
+      // Try alternative endpoint
+      try {
+        const altResponse = await axios.post(`${API_BASE_URL}/customer/orders/${orderId}/pay`, {
+          status: 'paid',
+          mpesa_receipt: mpesaReceipt,
+          payment_method: 'mpesa'
+        });
+        return altResponse.status === 200 || altResponse.status === 201;
+      } catch (altError) {
+        return false;
+      }
+    }
+  };
+
   const initiateMpesaPayment = async (orderId: string, phone: string, amount: number) => {
     const formattedPhone = formatPhoneForMpesa(phone);
     let checkoutRequestId: string | null = null;
     let stkPushResponseData: any = null;
 
-    // STEP 1: Try to mark the order for payment - SILENTLY IGNORE ALL ERRORS
-    try {
-      await axios.post(
-        `${API_BASE_URL}/customer/orders/${orderId}/pay`,
-        {
-          sale_id: orderId,
-          payment_method: "mpesa",
-          phone_number: formattedPhone,
-        }
-      );
-    } catch { }
+    // First, check if order already has completed payment
+    const existingOrder = await checkExistingOrder(orderId);
 
-    // STEP 2: Try to send the STK push - EXTRACT DATA EVEN ON FAILURE
-    try {
-      const response = await axios.post(
-        `${API_BASE_URL}/payments/mpesa/stk-push`,
-        {
-          amount: amount,
-          phoneNumber: formattedPhone,
-          reference: orderId
-        }
+    if (existingOrder.exists && existingOrder.hasCompletedPayment) {
+      const completedPayment = existingOrder.data.payments?.find((p: any) =>
+        p.status === 'completed' || p.status === 'paid'
       );
-      stkPushResponseData = response.data;
-    } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.data) {
-        stkPushResponseData = error.response.data;
+
+      if (completedPayment) {
+        // Order already has completed payment - don't initiate new one
+        return {
+          alreadyPaid: true,
+          checkoutRequestID: completedPayment.mpesa_checkout_request_id,
+          mpesaReceiptNumber: completedPayment.mpesa_receipt_number,
+          message: "Payment already completed"
+        };
       }
     }
 
-    // STEP 3: Try to extract checkoutRequestId from ANY response
-    if (stkPushResponseData) {
-      checkoutRequestId = stkPushResponseData?.CheckoutRequestID ||
+    // STEP 1: Try the correct API endpoint based on the documentation
+    // The documentation shows: POST /customer/orders/{orderId}/pay
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/customer/orders/${orderId}/pay`,
+        {
+          phone_number: formattedPhone,
+          payment_method: "mpesa",
+          amount: amount
+        }
+      );
+
+      stkPushResponseData = response.data;
+
+      // Extract checkoutRequestId from the response based on typical M-Pesa STK response structure
+      checkoutRequestId =
+        stkPushResponseData?.CheckoutRequestID ||
         stkPushResponseData?.checkoutRequestID ||
         stkPushResponseData?.checkoutRequestId ||
-        stkPushResponseData?.CheckoutRequestId ||
         stkPushResponseData?.data?.CheckoutRequestID ||
         stkPushResponseData?.MerchantRequestID ||
-        stkPushResponseData?.merchantRequestID;
+        stkPushResponseData?.merchantRequestID ||
+        stkPushResponseData?.request_id;
+
+      // Check if response indicates already paid
+      if (stkPushResponseData?.message?.toLowerCase().includes("already paid") ||
+        stkPushResponseData?.message?.toLowerCase().includes("duplicate") ||
+        stkPushResponseData?.status === "already_paid") {
+        return {
+          alreadyPaid: true,
+          message: "Payment already completed"
+        };
+      }
+
+    } catch (error: any) {
+      console.error("Error initiating M-Pesa payment:", error.response?.data || error.message);
+
+      // Try alternative endpoint if the first one fails
+      try {
+        console.log("Trying alternative payment endpoint...");
+
+        const altResponse = await axios.post(
+          `${API_BASE_URL}/payments/stk-push`,
+          {
+            amount: amount,
+            phone_number: formattedPhone,
+            account_reference: orderId,
+            transaction_desc: `Payment for order ${orderId}`
+          }
+        );
+
+        stkPushResponseData = altResponse.data;
+
+        checkoutRequestId =
+          altResponse.data?.CheckoutRequestID ||
+          altResponse.data?.checkoutRequestID ||
+          altResponse.data?.MerchantRequestID;
+
+      } catch (altError: any) {
+        console.error("Alternative payment endpoint also failed:", altError.response?.data || altError.message);
+
+        // Check if error indicates already paid
+        const errorData = altError.response?.data;
+        const errorMsg = JSON.stringify(errorData).toLowerCase();
+
+        if (errorMsg.includes("already paid") || errorMsg.includes("duplicate") || errorMsg.includes("completed")) {
+          return {
+            alreadyPaid: true,
+            message: "Payment may already be completed. Checking status..."
+          };
+        }
+
+        throw new Error("Failed to initiate payment. Please try again or contact support.");
+      }
     }
 
     return {
@@ -265,7 +360,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       CheckoutRequestID: checkoutRequestId,
       checkoutRequestID: checkoutRequestId,
       success: true,
-      message: "Payment initiated. Please check your phone."
+      message: "Payment initiated. Please check your phone for the M-Pesa prompt."
     };
   };
 
@@ -302,6 +397,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       setLoading(true);
       const orderData = formatOrderData();
       let rawSaleId: string | null = null;
+      let existingOrderWithPayment = false;
 
       // Step 1: Submit order
       if (onOrderSubmit) {
@@ -310,8 +406,28 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           rawSaleId = result.sale_id as string;
         }
       } else {
-        const orderRes = await axios.post(`${API_BASE_URL}/customer/orders`, orderData);
-        rawSaleId = orderRes.data?.sale_id || orderRes.data?.id || orderRes.data?.order_id || null;
+        try {
+          const orderRes = await axios.post(`${API_BASE_URL}/customer/orders`, orderData);
+          rawSaleId = orderRes.data?.sale_id || orderRes.data?.id || orderRes.data?.order_id || null;
+
+          // Check if we got a previously created order
+          if (orderRes.data?.existing) {
+            existingOrderWithPayment = true;
+            setExistingOrderData(orderRes.data);
+          }
+        } catch (error: any) {
+          // Check if error is due to duplicate order creation
+          if (error.response?.status === 400 || error.response?.status === 409) {
+            // Try to extract order ID from error or create a new one
+            const errorMsg = error.response.data?.message || "";
+            const match = errorMsg.match(/SAL\d+/i);
+            if (match) {
+              rawSaleId = match[0];
+              existingOrderWithPayment = true;
+            }
+          }
+          throw error;
+        }
       }
 
       const normalizedSaleId = normalizeSaleId(rawSaleId);
@@ -322,19 +438,59 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       setSaleId(normalizedSaleId);
 
-      // Step 2: Initiate payment
-      try {
-        const paymentResponse = await initiateMpesaPayment(normalizedSaleId, phoneNumber, grandTotal);
-        const extractedCheckoutId = paymentResponse?.CheckoutRequestID || paymentResponse?.checkoutRequestID;
+      // Step 2: Check order status before initiating payment
+      const orderCheck = await checkExistingOrder(normalizedSaleId);
+
+      if (orderCheck.exists && orderCheck.hasCompletedPayment) {
+        // Order already has completed payment
+        const completedPayment = orderCheck.data.payments.find((p: any) =>
+          p.status === 'completed' || p.status === 'paid'
+        );
 
         setStatus({
           type: 'info',
-          message: `Order ${normalizedSaleId} created. Please check your phone for the M-Pesa prompt.`
+          message: `Order ${normalizedSaleId} already has a completed payment.`
         });
 
-        setCheckoutRequestId(extractedCheckoutId);
+        setCheckoutRequestId(completedPayment?.mpesa_checkout_request_id || null);
         setShowPaymentModal(true);
         setActiveStep('payment');
+        return;
+      }
+
+      // Step 3: Initiate payment if no completed payment exists
+      try {
+        const paymentResponse = await initiateMpesaPayment(normalizedSaleId, phoneNumber, grandTotal);
+
+        if (paymentResponse.alreadyPaid) {
+          // Payment already completed
+          setStatus({
+            type: 'info',
+            message: `Order ${normalizedSaleId} may already be paid. Checking status...`
+          });
+
+          // Check order again to get updated payment details
+          const updatedOrderCheck = await checkExistingOrder(normalizedSaleId);
+          if (updatedOrderCheck.exists) {
+            setExistingOrderData(updatedOrderCheck.data);
+          }
+
+          setCheckoutRequestId(paymentResponse.checkoutRequestID || null);
+          setShowPaymentModal(true);
+          setActiveStep('payment');
+        } else {
+          // New payment initiated
+          const extractedCheckoutId = paymentResponse?.CheckoutRequestID || paymentResponse?.checkoutRequestID;
+
+          setStatus({
+            type: 'info',
+            message: `Order ${normalizedSaleId} created. Please check your phone for the M-Pesa prompt.`
+          });
+
+          setCheckoutRequestId(extractedCheckoutId);
+          setShowPaymentModal(true);
+          setActiveStep('payment');
+        }
 
       } catch (error) {
         setStatus({
@@ -345,11 +501,37 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }
     } catch (error: any) {
       let errorMessage = "An error occurred. Please try again.";
+
+      // Handle specific error cases
       if (error.response?.data?.message) {
         if (Array.isArray(error.response.data.message)) {
           errorMessage = error.response.data.message.join(", ");
         } else {
           errorMessage = error.response.data.message;
+
+          // Check for duplicate order error
+          if (errorMessage.includes("already exists") || errorMessage.includes("duplicate")) {
+            // Try to extract order ID
+            const match = errorMessage.match(/SAL\d+/i);
+            if (match) {
+              const existingOrderId = match[0];
+              setSaleId(existingOrderId);
+
+              // Check if this order already has payment
+              const orderCheck = await checkExistingOrder(existingOrderId);
+              if (orderCheck.exists && orderCheck.hasCompletedPayment) {
+                setStatus({
+                  type: 'info',
+                  message: `Order ${existingOrderId} already exists with completed payment.`
+                });
+                setShowPaymentModal(true);
+                setActiveStep('payment');
+                return;
+              } else {
+                errorMessage = `Order ${existingOrderId} already exists. Please try a different order or contact support.`;
+              }
+            }
+          }
         }
       } else if (error.message) {
         errorMessage = error.message;
@@ -539,24 +721,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             startContent={<PhoneIcon className="w-5 h-5 text-gray-400" />}
                           />
                         </div>
-
-                        <div className="grid md:grid-cols-2 gap-4 mt-4">
-                          <Input
-                            label="Company Name (Optional)"
-                            placeholder="Acme Corporation"
-                            value={companyName}
-                            onChange={(e) => setCompanyName(e.target.value)}
-                            disabled={loading}
-                            startContent={<BuildingOfficeIcon className="w-5 h-5 text-gray-400" />}
-                          />
-                          <Input
-                            label="PO Number (Optional)"
-                            placeholder="PO-2024-001"
-                            value={poNumber}
-                            onChange={(e) => setPoNumber(e.target.value)}
-                            disabled={loading}
-                          />
-                        </div>
                       </div>
 
                       {/* Delivery Information */}
@@ -591,41 +755,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                         <div className="mt-4">
                           <Input
-                            type="email"
-                            label="Recipient Email"
-                            placeholder="recipient@company.com"
-                            value={recipientEmail}
-                            onChange={(e) => setRecipientEmail(e.target.value)}
-                            disabled={loading}
-                            startContent={<EnvelopeIcon className="w-5 h-5 text-gray-400" />}
-                          />
-                        </div>
-
-                        <div className="mt-4">
-                          <Textarea
                             label="Delivery Address"
                             placeholder="Building name, Street, Floor/Unit, Landmarks"
                             value={deliveryAddress}
                             onChange={(e) => setDeliveryAddress(e.target.value)}
                             isRequired
-                            minRows={3}
                             disabled={loading}
                             classNames={{
                               input: "text-base",
                               label: "text-gray-700 dark:text-gray-300"
                             }}
-                            startContent={<MapPinIcon className="w-5 h-5 text-gray-400 mt-3" />}
-                          />
-                        </div>
-
-                        <div className="mt-4">
-                          <Textarea
-                            label="Special Instructions (Optional)"
-                            placeholder="Delivery timing preferences, access instructions, etc."
-                            value={notes}
-                            onChange={(e) => setNotes(e.target.value)}
-                            minRows={2}
-                            disabled={loading}
+                            startContent={<MapPinIcon className="w-5 h-5 text-gray-400" />}
                           />
                         </div>
                       </div>
@@ -656,7 +796,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                               <div className="space-y-1 text-sm text-gray-600 dark:text-gray-400">
                                 <p>{customerName}</p>
                                 <p>{phoneNumber}</p>
-                                {companyName && <p>{companyName}</p>}
                               </div>
                             </div>
                             <div>

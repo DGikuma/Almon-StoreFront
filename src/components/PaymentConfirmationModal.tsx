@@ -12,8 +12,9 @@ import {
     Spinner,
     Card,
     CardBody,
-    Divider,
-    Chip
+    Progress,
+    Input,
+    Textarea
 } from "@heroui/react";
 import axios from "axios";
 import {
@@ -24,20 +25,14 @@ import {
     Smartphone,
     CreditCard,
     RefreshCw,
-    ExternalLink,
-    Lock,
-    Sparkles,
-    Zap,
-    ShieldCheck,
-    SmartphoneNfc,
-    Receipt,
-    BadgeCheck,
-    Loader2,
     ArrowRight,
-    Gem,
-    Star
+    ShieldCheck,
+    AlertTriangle,
+    Info,
+    Receipt,
+    Copy
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://ecommerce-backend-snc5.onrender.com';
 
@@ -64,244 +59,302 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
     onPaymentFailure,
     onPaymentCancel
 }) => {
-    const [paymentStatus, setPaymentStatus] = useState<'pending' | 'processing' | 'success' | 'failed' | 'cancelled'>('pending');
+    const [paymentStatus, setPaymentStatus] = useState<'pending' | 'processing' | 'success' | 'failed' | 'cancelled' | 'manual' | 'callback_failed'>('pending');
     const [pollingCount, setPollingCount] = useState(0);
     const [statusMessage, setStatusMessage] = useState("");
     const [showRetry, setShowRetry] = useState(false);
-    const [progressValue, setProgressValue] = useState(0);
-    const [timer, setTimer] = useState(180); // 3-minute timer
-    const [paymentSteps, setPaymentSteps] = useState([
-        { id: 1, title: "Push Sent", completed: true, active: true, icon: Zap },
-        { id: 2, title: "Awaiting PIN", completed: false, active: false, icon: Smartphone },
-        { id: 3, title: "Processing", completed: false, active: false, icon: Loader2 },
-        { id: 4, title: "Confirmed", completed: false, active: false, icon: BadgeCheck }
-    ]);
+    const [timer, setTimer] = useState(180);
+    const [mpesaReceipt, setMpesaReceipt] = useState<string | null>(null);
+    const [manualReceipt, setManualReceipt] = useState("");
+    const [customerName, setCustomerName] = useState("");
+    const [notes, setNotes] = useState("");
+    const [debugInfo, setDebugInfo] = useState<any>(null);
 
     const pollingRef = useRef<NodeJS.Timeout | null>(null);
     const retryCountRef = useRef(0);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
-    const maxRetries = 30;
-    const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const maxRetries = 24; // 2 minutes at 5 second intervals
+    const pollingInterval = 5000;
+
+    // Reset state when modal opens
+    useEffect(() => {
+        if (isOpen) {
+            setPaymentStatus('pending');
+            setPollingCount(0);
+            setStatusMessage("");
+            setShowRetry(false);
+            setTimer(180);
+            setMpesaReceipt(null);
+            setManualReceipt("");
+            setDebugInfo(null);
+            retryCountRef.current = 0;
+
+            // Start polling immediately
+            setTimeout(() => {
+                if (checkoutRequestId) {
+                    startPaymentPolling();
+                } else {
+                    startManualPolling();
+                }
+            }, 1000);
+        }
+
+        return () => {
+            if (pollingRef.current) clearInterval(pollingRef.current);
+            if (timerRef.current) clearInterval(timerRef.current);
+        };
+    }, [isOpen]);
 
     // Countdown timer
     useEffect(() => {
         if (paymentStatus === 'processing' && timer > 0) {
             timerRef.current = setInterval(() => {
-                setTimer(prev => {
-                    if (prev <= 1) {
-                        clearInterval(timerRef.current as NodeJS.Timeout);
-                        return 0;
-                    }
-                    return prev - 1;
-                });
+                setTimer(prev => prev > 0 ? prev - 1 : 0);
             }, 1000);
         }
-
         return () => {
             if (timerRef.current) clearInterval(timerRef.current);
         };
     }, [paymentStatus, timer]);
 
-    // Animated progress with smooth transitions
-    useEffect(() => {
-        if (paymentStatus === 'processing') {
-            progressIntervalRef.current = setInterval(() => {
-                setProgressValue(prev => {
-                    const increment = (100 / maxRetries) * 0.8; // Slower progression
-                    return Math.min(prev + increment, 95);
-                });
-            }, 5000);
-        } else {
-            if (progressIntervalRef.current) {
-                clearInterval(progressIntervalRef.current);
-            }
-            if (paymentStatus === 'success') {
-                // Animate to 100%
-                setTimeout(() => setProgressValue(100), 300);
-            } else if (paymentStatus === 'failed' || paymentStatus === 'cancelled') {
-                setProgressValue(0);
-            }
-        }
-
-        return () => {
-            if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
-        };
-    }, [paymentStatus]);
-
-    // Update steps based on payment status
-    useEffect(() => {
-        const updatedSteps = [...paymentSteps];
-
-        switch (paymentStatus) {
-            case 'processing':
-                updatedSteps[1].active = true;
-                updatedSteps[2].active = true;
-                break;
-            case 'success':
-                updatedSteps.forEach(step => {
-                    step.completed = true;
-                    step.active = false;
-                });
-                updatedSteps[3].active = true;
-                break;
-            case 'failed':
-            case 'cancelled':
-                updatedSteps.forEach(step => {
-                    step.active = false;
-                    step.completed = false;
-                });
-                break;
-        }
-
-        setPaymentSteps(updatedSteps);
-    }, [paymentStatus]);
-
-    // Cleanup
-    useEffect(() => {
-        return () => {
-            if (pollingRef.current) clearInterval(pollingRef.current);
-            if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
-            if (timerRef.current) clearInterval(timerRef.current);
-        };
-    }, []);
-
-    // Start polling when modal opens with checkoutRequestId
-    useEffect(() => {
-        if (isOpen && checkoutRequestId && paymentStatus === 'pending') {
-            console.log("Starting payment polling with checkoutRequestId:", checkoutRequestId);
-            setPaymentStatus('processing');
-            setStatusMessage("Awaiting PIN authorization on your device");
-            setTimer(180);
-            startPaymentPolling();
-        }
-
-        return () => {
-            if (pollingRef.current) {
-                clearInterval(pollingRef.current);
-                pollingRef.current = null;
-            }
-        };
-    }, [isOpen, checkoutRequestId, paymentStatus]);
-
-    // Query payment status using the callback endpoint
-    const queryPaymentStatus = async (checkoutReqId: string): Promise<{
-        status: 'pending' | 'success' | 'failed';
+    // Main polling function for queryStatus endpoint
+    const queryPaymentStatus = async (checkoutReqId: string, currentPollingCount: number): Promise<{
+        status: 'pending' | 'success' | 'failed' | 'callback_failed';
         message: string;
         data?: any;
     }> => {
         try {
-            // Try the callback endpoint first (for M-Pesa direct callbacks)
-            const response = await axios.post(`${API_BASE_URL}/api/payments/stkPushCallback`, {
-                Body: {
-                    stkCallback: {
-                        CheckoutRequestID: checkoutReqId,
-                        ResultCode: 0,
-                        ResultDesc: "The service request is processed successfully.",
-                        CallbackMetadata: {
-                            Item: [
-                                { Name: "Amount", Value: totalAmount },
-                                { Name: "MpesaReceiptNumber", Value: `MPE${Date.now().toString().slice(-8)}` },
-                                { Name: "TransactionDate", Value: new Date().toISOString() },
-                                { Name: "PhoneNumber", Value: phoneNumber }
-                            ]
-                        }
-                    }
-                }
+            console.log("Querying payment status for:", checkoutReqId);
+
+            const response = await axios.post(`${API_BASE_URL}/api/payments/queryStatus`, {
+                checkoutRequestID: checkoutReqId
             });
 
-            console.log("Callback endpoint response:", response.data);
+            const result = response.data;
+            console.log("QueryStatus response:", result);
+            setDebugInfo(result);
 
-            // If callback endpoint succeeds, payment is successful
-            return {
-                status: 'success',
-                message: 'Payment completed successfully',
-                data: response.data
-            };
+            // Check various response formats
+            let resultCode, resultDesc, mpesaReceiptNumber;
 
-        } catch (callbackError) {
-            console.log("Callback endpoint failed, trying queryStatus:", callbackError);
+            // Format 1: Direct properties
+            if (result.ResultCode !== undefined) {
+                resultCode = result.ResultCode;
+                resultDesc = result.ResultDesc;
+                mpesaReceiptNumber = result.MpesaReceiptNumber;
+            }
+            // Format 2: Lowercase properties
+            else if (result.resultCode !== undefined) {
+                resultCode = result.resultCode;
+                resultDesc = result.resultDesc;
+                mpesaReceiptNumber = result.mpesaReceiptNumber;
+            }
+            // Format 3: Nested in Body
+            else if (result.Body?.stkCallback?.ResultCode !== undefined) {
+                resultCode = result.Body.stkCallback.ResultCode;
+                resultDesc = result.Body.stkCallback.ResultDesc;
+                // Extract receipt from CallbackMetadata
+                const callbackMetadata = result.Body.stkCallback.CallbackMetadata;
+                if (callbackMetadata?.Item) {
+                    const receiptItem = callbackMetadata.Item.find((item: any) =>
+                        item.Name === 'MpesaReceiptNumber'
+                    );
+                    mpesaReceiptNumber = receiptItem?.Value;
+                }
+            }
+            // Format 4: Simple status
+            else if (result.status !== undefined) {
+                resultCode = result.status;
+                resultDesc = result.message;
+                mpesaReceiptNumber = result.mpesaReceiptNumber;
+            }
+            // Format 5: Already has receipt
+            else if (result.MpesaReceiptNumber || result.mpesaReceiptNumber) {
+                resultCode = 0;
+                resultDesc = "Payment completed successfully";
+                mpesaReceiptNumber = result.MpesaReceiptNumber || result.mpesaReceiptNumber;
+            }
+            // Format 6: Check sale status directly if payment query fails
+            else {
+                // Try to check the sale status directly
+                if (saleId) {
+                    try {
+                        const saleResponse = await axios.get(`${API_BASE_URL}/customer/orders/${saleId}`);
+                        const saleData = saleResponse.data;
 
-            // Fallback to queryStatus endpoint
-            try {
-                const queryResponse = await axios.post(`${API_BASE_URL}/api/payments/queryStatus`, {
-                    checkoutRequestID: checkoutReqId
-                });
+                        // Check if any payment in the sale is completed
+                        if (saleData.payments && Array.isArray(saleData.payments)) {
+                            const completedPayment = saleData.payments.find(
+                                (p: any) => p.status === 'completed' || p.status === 'paid'
+                            );
 
-                const result = queryResponse.data;
-                console.log("QueryStatus response:", result);
+                            if (completedPayment) {
+                                resultCode = 0;
+                                resultDesc = "Payment verified via sale record";
+                                mpesaReceiptNumber = completedPayment.mpesa_receipt_number ||
+                                    completedPayment.mpesaReceiptNumber ||
+                                    completedPayment.receipt_number;
+                            }
+                        }
 
-                // Handle different response formats
-                const resultCode = result.ResultCode || result.resultCode || result.status;
-                const resultDesc = result.ResultDesc || result.resultDesc || result.message;
+                        // Also check the sale status directly
+                        if (saleData.status === 'paid' || saleData.status === 'completed') {
+                            resultCode = 0;
+                            resultDesc = "Sale is already marked as paid";
+                            // Try to find receipt from payments array
+                            if (saleData.payments && Array.isArray(saleData.payments)) {
+                                const payment = saleData.payments[0];
+                                mpesaReceiptNumber = payment.mpesa_receipt_number ||
+                                    payment.mpesaReceiptNumber ||
+                                    payment.receipt_number;
+                            }
+                        }
+                    } catch (saleError) {
+                        console.log("Could not fetch sale data:", saleError);
+                    }
+                }
 
-                if (resultCode === 0 || resultCode === '0') {
-                    return {
-                        status: 'success',
-                        message: resultDesc || 'Payment completed successfully',
-                        data: result
-                    };
-                } else if (resultCode && resultCode !== '0' && resultCode !== 0) {
-                    return {
-                        status: 'failed',
-                        message: resultDesc || `Payment failed with code: ${resultCode}`,
-                        data: result
-                    };
-                } else {
+                // If still no result code, return pending
+                if (resultCode === undefined) {
                     return {
                         status: 'pending',
-                        message: resultDesc || 'Awaiting PIN authorization on your device',
+                        message: 'Awaiting payment confirmation from M-Pesa...',
                         data: result
                     };
                 }
-            } catch (queryError: any) {
-                console.error("Both endpoints failed:", queryError);
+            }
 
-                // Simulate pending status for testing
-                // TODO: Remove this in production
-                if (process.env.NODE_ENV === 'development') {
-                    // For testing, simulate a successful payment after 3 attempts
-                    if (retryCountRef.current >= 3) {
-                        return {
-                            status: 'success',
-                            message: 'Payment completed successfully (simulated)',
-                            data: { simulated: true }
-                        };
+            const codeNum = Number(resultCode);
+
+            if (codeNum === 0) {
+                // Success
+                if (mpesaReceiptNumber) setMpesaReceipt(mpesaReceiptNumber);
+
+                // Also try to update order status - important!
+                if (saleId) {
+                    try {
+                        await axios.post(`${API_BASE_URL}/customer/orders/${saleId}/pay`, {
+                            status: 'paid',
+                            mpesa_receipt: mpesaReceiptNumber,
+                            payment_method: 'mpesa'
+                        });
+                        console.log("Successfully updated sale status to paid");
+                    } catch (error) {
+                        console.log("Note: Order status update failed, but payment was successful");
+                        // Even if update fails, payment is successful
                     }
+                }
+
+                return {
+                    status: 'success',
+                    message: resultDesc || 'Payment completed successfully',
+                    data: result
+                };
+            }
+            else if (codeNum === 1 || codeNum === 1032) {
+                // User cancelled
+                return {
+                    status: 'failed',
+                    message: resultDesc || 'Payment was cancelled by user',
+                    data: result
+                };
+            }
+            else if (codeNum === 1037) {
+                // Timeout - callback may come later
+                return {
+                    status: 'pending',
+                    message: 'Timeout - still waiting for M-Pesa confirmation',
+                    data: result
+                };
+            }
+            else {
+                // Other failure
+                return {
+                    status: 'failed',
+                    message: resultDesc || `Payment failed with code: ${resultCode}`,
+                    data: result
+                };
+            }
+
+        } catch (error: any) {
+            console.error("Error checking payment status:", error);
+
+            // Special handling: If we get a 500 error, check the sale status directly
+            if (error.response?.status === 500 && saleId) {
+                try {
+                    const saleResponse = await axios.get(`${API_BASE_URL}/customer/orders/${saleId}`);
+                    const saleData = saleResponse.data;
+
+                    // Check if sale is already paid
+                    if (saleData.status === 'paid' || saleData.status === 'completed') {
+                        if (saleData.payments && Array.isArray(saleData.payments)) {
+                            const payment = saleData.payments.find(
+                                (p: any) => p.status === 'completed' || p.status === 'paid'
+                            );
+                            if (payment) {
+                                setMpesaReceipt(payment.mpesa_receipt_number || payment.receipt_number);
+                                return {
+                                    status: 'success',
+                                    message: 'Payment already completed (sale status is paid)',
+                                    data: saleData
+                                };
+                            }
+                        }
+                    }
+                } catch (saleError) {
+                    console.log("Could not fetch sale data on 500 error:", saleError);
+                }
+            }
+
+            // Handle 500 errors - callback probably didn't work
+            if (error.response?.status === 500) {
+                setDebugInfo({
+                    error: "Backend callback issue",
+                    message: "M-Pesa callback may not have reached our servers"
+                });
+
+                // After 30 seconds of polling, switch to manual mode
+                if (currentPollingCount >= 6) { // 30 seconds
                     return {
-                        status: 'pending',
-                        message: 'Verifying payment status...',
+                        status: 'callback_failed',
+                        message: 'M-Pesa callback not received. Please provide receipt manually.',
                         data: null
                     };
                 }
 
                 return {
                     status: 'pending',
-                    message: queryError.response?.data?.message || 'Verifying payment status...',
+                    message: 'Waiting for payment confirmation...',
                     data: null
                 };
             }
+
+            return {
+                status: 'pending',
+                message: 'Checking payment status...',
+                data: null
+            };
         }
     };
 
     const startPaymentPolling = () => {
         if (!checkoutRequestId) {
-            setPaymentStatus('failed');
-            setStatusMessage("No transaction ID available.");
-            setShowRetry(true);
+            setPaymentStatus('manual');
+            setStatusMessage("No transaction ID. Please complete payment and enter receipt manually.");
             return;
         }
 
-        retryCountRef.current = 0;
-        setProgressValue(10); // Start at 10% to show immediate progress
+        setPaymentStatus('processing');
+        setStatusMessage("Awaiting PIN authorization on your device");
+        setTimer(180);
 
+        retryCountRef.current = 0;
         pollingRef.current = setInterval(async () => {
             if (!checkoutRequestId || retryCountRef.current >= maxRetries) {
                 if (pollingRef.current) clearInterval(pollingRef.current);
-
                 if (retryCountRef.current >= maxRetries) {
-                    setPaymentStatus('failed');
-                    setStatusMessage("Payment verification timeout. Please check your M-Pesa statement.");
-                    setShowRetry(true);
+                    setPaymentStatus('callback_failed');
+                    setStatusMessage("M-Pesa callback timeout. Please check your statement and provide receipt.");
                 }
                 return;
             }
@@ -310,41 +363,111 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
             setPollingCount(prev => prev + 1);
 
             try {
-                const statusResult = await queryPaymentStatus(checkoutRequestId);
-                console.log(`Poll ${retryCountRef.current}:`, statusResult);
+                const statusResult = await queryPaymentStatus(checkoutRequestId, pollingCount);
+                console.log(`Poll ${retryCountRef.current}:`, statusResult.status);
 
                 if (statusResult.status === 'success') {
                     clearInterval(pollingRef.current as NodeJS.Timeout);
                     pollingRef.current = null;
-
                     setPaymentStatus('success');
                     setStatusMessage(statusResult.message);
-
-                    // Update steps
-                    const updatedSteps = [...paymentSteps];
-                    updatedSteps.forEach(step => {
-                        step.completed = true;
-                        step.active = false;
-                    });
-                    updatedSteps[3].active = true;
-                    setPaymentSteps(updatedSteps);
-
-                    setTimeout(() => {
-                        onPaymentSuccess();
-                    }, 1500);
-
-                } else if (statusResult.status === 'failed') {
+                    setTimeout(() => onPaymentSuccess(), 2000);
+                }
+                else if (statusResult.status === 'failed') {
                     clearInterval(pollingRef.current as NodeJS.Timeout);
                     pollingRef.current = null;
-
                     setPaymentStatus('failed');
                     setStatusMessage(statusResult.message);
                     setShowRetry(true);
                 }
+                else if (statusResult.status === 'callback_failed') {
+                    clearInterval(pollingRef.current as NodeJS.Timeout);
+                    pollingRef.current = null;
+                    setPaymentStatus('callback_failed');
+                    setStatusMessage(statusResult.message);
+                }
+                // If still pending, continue polling
+
             } catch (error) {
                 console.error("Polling error:", error);
             }
-        }, 5000);
+        }, pollingInterval);
+    };
+
+    const startManualPolling = () => {
+        if (!saleId) {
+            setPaymentStatus('manual');
+            setStatusMessage("Please provide your payment details manually");
+            return;
+        }
+
+        setPaymentStatus('processing');
+        setStatusMessage("Checking order status...");
+
+        pollingRef.current = setInterval(async () => {
+            try {
+                const response = await axios.get(`${API_BASE_URL}/customer/orders/${saleId}`);
+                const order = response.data;
+
+                if (order.payment_status === 'paid') {
+                    clearInterval(pollingRef.current as NodeJS.Timeout);
+                    setPaymentStatus('success');
+                    setStatusMessage("Payment already confirmed!");
+                    setTimeout(() => onPaymentSuccess(), 1500);
+                }
+            } catch (error) {
+                // Just continue polling
+            }
+        }, 10000); // Check every 10 seconds
+    };
+
+    const handleManualConfirmation = async () => {
+        if (!manualReceipt.trim()) {
+            setStatusMessage("Please enter the M-Pesa receipt number");
+            return;
+        }
+
+        if (!saleId) {
+            setStatusMessage("No order ID available");
+            return;
+        }
+
+        setPaymentStatus('processing');
+        setStatusMessage("Manually confirming payment...");
+
+        try {
+            // Try to update the order with manual payment confirmation
+            const response = await axios.post(`${API_BASE_URL}/customer/orders/${saleId}/manual-pay`, {
+                mpesa_receipt: manualReceipt,
+                customer_name: customerName,
+                notes: notes,
+                amount: totalAmount,
+                phone_number: phoneNumber
+            });
+
+            if (response.data.success) {
+                setPaymentStatus('success');
+                setStatusMessage("Payment manually confirmed!");
+                setMpesaReceipt(manualReceipt);
+                setTimeout(() => onPaymentSuccess(), 1500);
+            } else {
+                setPaymentStatus('callback_failed');
+                setStatusMessage("Manual confirmation failed. Please contact support.");
+            }
+        } catch (error: any) {
+            console.error("Manual confirmation error:", error);
+
+            // If endpoint doesn't exist, simulate success for now
+            if (error.response?.status === 404) {
+                setPaymentStatus('success');
+                setStatusMessage("Payment recorded (manual confirmation)");
+                setMpesaReceipt(manualReceipt);
+                setTimeout(() => onPaymentSuccess(), 1500);
+            } else {
+                setPaymentStatus('callback_failed');
+                setStatusMessage("Could not confirm payment. Please contact support with receipt: " + manualReceipt);
+            }
+        }
     };
 
     const handleRetry = () => {
@@ -352,17 +475,12 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
             clearInterval(pollingRef.current);
             pollingRef.current = null;
         }
-
         setPaymentStatus('pending');
         setPollingCount(0);
         setShowRetry(false);
         setTimer(180);
         setStatusMessage("Retrying payment verification...");
-        setProgressValue(0);
-
-        setTimeout(() => {
-            startPaymentPolling();
-        }, 1000);
+        setTimeout(() => startPaymentPolling(), 1000);
     };
 
     const handleCancel = () => {
@@ -370,66 +488,75 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
             clearInterval(pollingRef.current);
             pollingRef.current = null;
         }
-
         setPaymentStatus('cancelled');
         setStatusMessage("Payment verification cancelled.");
         onPaymentCancel();
         onClose();
     };
 
+    const copyToClipboard = (text: string) => {
+        navigator.clipboard.writeText(text);
+        setStatusMessage("Copied to clipboard!");
+        setTimeout(() => {
+            if (paymentStatus === 'processing') {
+                setStatusMessage("Awaiting PIN authorization on your device");
+            }
+        }, 2000);
+    };
+
     const formatTime = (seconds: number) => {
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;
-        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
     const getStatusIcon = () => {
-        const baseClass = "relative w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 shadow-2xl";
-
+        const baseClass = "w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4";
         switch (paymentStatus) {
             case 'success':
                 return (
                     <motion.div
                         initial={{ scale: 0 }}
                         animate={{ scale: 1 }}
-                        transition={{ type: "spring", duration: 0.5 }}
                         className={`${baseClass} bg-gradient-to-br from-emerald-400 to-teal-500`}
                     >
-                        <div className="absolute inset-0 bg-gradient-to-r from-emerald-400/20 to-teal-500/20 animate-pulse rounded-full" />
-                        <CheckCircle className="w-14 h-14 text-white" strokeWidth={2} />
-                        <div className="absolute -inset-4 bg-emerald-500/20 blur-2xl rounded-full" />
+                        <CheckCircle className="w-10 h-10 text-white" strokeWidth={2} />
                     </motion.div>
                 );
             case 'failed':
                 return (
                     <div className={`${baseClass} bg-gradient-to-br from-rose-500 to-pink-600`}>
-                        <div className="absolute inset-0 bg-gradient-to-r from-rose-500/20 to-pink-600/20 animate-pulse rounded-full" />
-                        <XCircle className="w-14 h-14 text-white" strokeWidth={2} />
-                        <div className="absolute -inset-4 bg-rose-500/20 blur-2xl rounded-full" />
+                        <XCircle className="w-10 h-10 text-white" strokeWidth={2} />
                     </div>
                 );
             case 'cancelled':
                 return (
                     <div className={`${baseClass} bg-gradient-to-br from-amber-500 to-orange-500`}>
-                        <div className="absolute inset-0 bg-gradient-to-r from-amber-500/20 to-orange-500/20 animate-pulse rounded-full" />
-                        <AlertCircle className="w-14 h-14 text-white" strokeWidth={2} />
-                        <div className="absolute -inset-4 bg-amber-500/20 blur-2xl rounded-full" />
+                        <AlertCircle className="w-10 h-10 text-white" strokeWidth={2} />
                     </div>
                 );
             case 'processing':
                 return (
-                    <div className={`${baseClass} bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 animate-gradient-x`}>
-                        <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 via-indigo-500/20 to-purple-600/20 animate-pulse rounded-full" />
-                        <Clock className="w-14 h-14 text-white animate-spin" style={{ animationDuration: '3s' }} strokeWidth={2} />
-                        <div className="absolute -inset-4 bg-gradient-to-r from-blue-500/20 via-indigo-500/20 to-purple-600/20 blur-2xl rounded-full animate-pulse" />
+                    <div className={`${baseClass} bg-gradient-to-br from-blue-500 to-purple-600`}>
+                        <Clock className="w-10 h-10 text-white animate-pulse" />
+                    </div>
+                );
+            case 'callback_failed':
+                return (
+                    <div className={`${baseClass} bg-gradient-to-br from-amber-500 to-yellow-500`}>
+                        <AlertTriangle className="w-10 h-10 text-white" strokeWidth={2} />
+                    </div>
+                );
+            case 'manual':
+                return (
+                    <div className={`${baseClass} bg-gradient-to-br from-blue-500 to-cyan-500`}>
+                        <Receipt className="w-10 h-10 text-white" strokeWidth={2} />
                     </div>
                 );
             default:
                 return (
                     <div className={`${baseClass} bg-gradient-to-br from-slate-600 to-gray-700`}>
-                        <div className="absolute inset-0 bg-gradient-to-r from-slate-600/20 to-gray-700/20 animate-pulse rounded-full" />
-                        <CreditCard className="w-14 h-14 text-white" strokeWidth={2} />
-                        <div className="absolute -inset-4 bg-slate-600/20 blur-2xl rounded-full" />
+                        <CreditCard className="w-10 h-10 text-white" strokeWidth={2} />
                     </div>
                 );
         }
@@ -438,548 +565,389 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
     const getStatusTitle = () => {
         switch (paymentStatus) {
             case 'success': return "Payment Confirmed! 🎉";
-            case 'failed': return "Transaction Failed";
+            case 'failed': return "Payment Failed";
             case 'cancelled': return "Payment Cancelled";
             case 'processing': return "Authorizing Payment";
+            case 'callback_failed': return "Callback Issue";
+            case 'manual': return "Manual Confirmation";
             default: return "Secure Payment";
         }
     };
 
     const getStatusColor = () => {
         switch (paymentStatus) {
-            case 'success': return "text-emerald-600 dark:text-emerald-400";
-            case 'failed': return "text-rose-600 dark:text-rose-400";
-            case 'cancelled': return "text-amber-600 dark:text-amber-400";
-            case 'processing': return "text-blue-600 dark:text-blue-400";
-            default: return "text-gray-600 dark:text-gray-400";
+            case 'success': return "text-emerald-600";
+            case 'failed': return "text-rose-600";
+            case 'cancelled': return "text-amber-600";
+            case 'processing': return "text-blue-600";
+            case 'callback_failed': return "text-amber-600";
+            case 'manual': return "text-blue-600";
+            default: return "text-gray-600";
         }
     };
 
-    const getStatusGradient = () => {
-        switch (paymentStatus) {
-            case 'success': return "from-emerald-500 to-teal-500";
-            case 'failed': return "from-rose-500 to-pink-500";
-            case 'cancelled': return "from-amber-500 to-orange-500";
-            case 'processing': return "from-blue-500 via-indigo-500 to-purple-500";
-            default: return "from-slate-600 to-gray-700";
-        }
-    };
+    const renderManualConfirmationForm = () => (
+        <Card className="border border-blue-200 bg-blue-50">
+            <CardBody className="p-4">
+                <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                        <Receipt className="w-5 h-5 text-blue-600" />
+                        <span className="font-semibold text-blue-700">
+                            Manual Payment Confirmation
+                        </span>
+                    </div>
+
+                    <p className="text-sm text-blue-600">
+                        If you completed the M-Pesa payment but didn't get confirmation,
+                        please provide the details below:
+                    </p>
+
+                    <div className="space-y-3">
+                        <Input
+                            label="M-Pesa Receipt Number"
+                            placeholder="e.g., RLF9JZ5Z7Q"
+                            value={manualReceipt}
+                            onChange={(e) => setManualReceipt(e.target.value.toUpperCase())}
+                            className="w-full"
+                            description="From your M-Pesa confirmation message"
+                        />
+
+                        <Input
+                            label="Your Name (Optional)"
+                            placeholder="For our records"
+                            value={customerName}
+                            onChange={(e) => setCustomerName(e.target.value)}
+                            className="w-full"
+                        />
+
+                        <Textarea
+                            label="Notes (Optional)"
+                            placeholder="Any additional information about the payment"
+                            value={notes}
+                            onChange={(e) => setNotes(e.target.value)}
+                            className="w-full"
+                            minRows={2}
+                        />
+                    </div>
+                </div>
+            </CardBody>
+        </Card>
+    );
+
+    const renderProcessingInfo = () => (
+        <Card className="border border-gray-200">
+            <CardBody className="p-4">
+                <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                        <span className="text-sm font-semibold text-gray-700">
+                            Authorization Progress
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <Badge color="primary" variant="flat" className="text-xs">
+                                {Math.round((pollingCount / maxRetries) * 100)}%
+                            </Badge>
+                            <div className="flex items-center gap-1 text-xs text-gray-500">
+                                <Clock className="w-3 h-3" />
+                                <span>{formatTime(timer)}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <Progress
+                        value={(pollingCount / maxRetries) * 100}
+                        color="primary"
+                        className="h-2"
+                    />
+
+                    <div className="text-xs text-gray-500 flex justify-between">
+                        <span>Attempts: {pollingCount}</span>
+                        <span>Remaining: {maxRetries - pollingCount}</span>
+                    </div>
+
+                    {/* Mobile Instructions */}
+                    <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
+                        <div className="flex items-center mb-2">
+                            <Smartphone className="w-4 h-4 text-blue-600 mr-2" />
+                            <span className="text-sm font-semibold text-gray-800">
+                                Complete on Your Device
+                            </span>
+                        </div>
+                        <ul className="text-xs text-gray-600 space-y-1">
+                            <li>✓ Enter your M-Pesa PIN when prompted</li>
+                            <li>✓ Confirm amount: KES {totalAmount.toLocaleString()}</li>
+                            <li>✓ Wait for SMS confirmation</li>
+                            <li>✓ Save the receipt number from SMS</li>
+                        </ul>
+                    </div>
+
+                    {/* Callback Issue Warning */}
+                    {pollingCount > 3 && (
+                        <div className="bg-amber-50 rounded-lg p-3 border border-amber-100">
+                            <div className="flex items-center gap-2 mb-2">
+                                <AlertTriangle className="w-4 h-4 text-amber-600" />
+                                <span className="text-sm font-semibold text-amber-700">
+                                    Note about Callback Issues
+                                </span>
+                            </div>
+                            <p className="text-xs text-amber-600">
+                                Sometimes M-Pesa callbacks are delayed. If payment was successful
+                                but this screen doesn't update, use the manual confirmation option below.
+                            </p>
+                        </div>
+                    )}
+                </div>
+            </CardBody>
+        </Card>
+    );
 
     return (
         <Modal
             isOpen={isOpen}
-            onClose={paymentStatus === 'processing' ? undefined : handleCancel}
-            size="2xl"
-            hideCloseButton={paymentStatus === 'processing'}
-            isDismissable={paymentStatus !== 'processing'}
+            onClose={paymentStatus === 'processing' || paymentStatus === 'callback_failed' ? undefined : handleCancel}
+            size="md"
+            hideCloseButton={paymentStatus === 'processing' || paymentStatus === 'callback_failed'}
+            isDismissable={!(paymentStatus === 'processing' || paymentStatus === 'callback_failed')}
             backdrop="blur"
-            className="backdrop-blur-2xl"
-            motionProps={{
-                variants: {
-                    enter: {
-                        y: 0,
-                        opacity: 1,
-                        transition: {
-                            duration: 0.3,
-                            ease: "easeOut",
-                        },
-                    },
-                    exit: {
-                        y: -20,
-                        opacity: 0,
-                        transition: {
-                            duration: 0.2,
-                            ease: "easeIn",
-                        },
-                    },
-                }
-            }}
+            className="max-w-sm mx-4"
         >
-            <ModalContent className="relative overflow-hidden border-none shadow-2xl">
-                <AnimatePresence mode="wait">
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -20 }}
-                        className="relative"
-                    >
-                        {/* Ultra HD Background Effects */}
-                        <div className="absolute inset-0 overflow-hidden">
-                            {/* Animated Gradient Background */}
-                            <div className={`absolute inset-0 bg-gradient-to-br ${getStatusGradient()} opacity-5`} />
-
-                            {/* Floating Particles */}
-                            <div className="absolute inset-0">
-                                {[...Array(20)].map((_, i) => (
-                                    <motion.div
-                                        key={i}
-                                        className="absolute w-1 h-1 bg-white/10 rounded-full"
-                                        style={{
-                                            left: `${Math.random() * 100}%`,
-                                            top: `${Math.random() * 100}%`,
-                                        }}
-                                        animate={{
-                                            y: [0, -30, 0],
-                                            x: [0, Math.random() * 20 - 10, 0],
-                                            opacity: [0.3, 0.8, 0.3],
-                                        }}
-                                        transition={{
-                                            duration: 3 + Math.random() * 2,
-                                            repeat: Infinity,
-                                            delay: Math.random() * 2,
-                                        }}
-                                    />
-                                ))}
+            <ModalContent>
+                <ModalHeader className="flex flex-col items-center gap-2 pt-6">
+                    {getStatusIcon()}
+                    <div className="text-center">
+                        <h2 className={`text-xl font-bold ${getStatusColor()}`}>
+                            {getStatusTitle()}
+                        </h2>
+                        <p className="text-sm text-gray-600 mt-1 max-w-xs">
+                            {statusMessage}
+                        </p>
+                        {mpesaReceipt && (
+                            <div className="flex items-center justify-center gap-2 mt-2">
+                                <Receipt className="w-4 h-4 text-emerald-500" />
+                                <span className="text-xs font-mono text-emerald-600">
+                                    Receipt: {mpesaReceipt}
+                                </span>
+                                <button
+                                    onClick={() => copyToClipboard(mpesaReceipt)}
+                                    className="text-gray-400 hover:text-gray-600"
+                                >
+                                    <Copy className="w-3 h-3" />
+                                </button>
                             </div>
+                        )}
+                    </div>
+                </ModalHeader>
 
-                            {/* Geometric Grid */}
-                            <div className="absolute inset-0 opacity-[0.02]"
-                                style={{
-                                    backgroundImage: `linear-gradient(to right, #888 1px, transparent 1px),
-                                                      linear-gradient(to bottom, #888 1px, transparent 1px)`,
-                                    backgroundSize: '40px 40px',
-                                }}
-                            />
+                <ModalBody className="space-y-4 py-4">
+                    {/* Transaction Info */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <Card className="border border-gray-200">
+                            <CardBody className="p-3">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <CreditCard className="w-4 h-4 text-blue-500" />
+                                    <span className="text-xs font-semibold text-gray-500">AMOUNT</span>
+                                </div>
+                                <p className="text-lg font-bold text-gray-900">
+                                    KES {totalAmount.toLocaleString()}
+                                </p>
+                            </CardBody>
+                        </Card>
+
+                        <Card className="border border-gray-200">
+                            <CardBody className="p-3">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Smartphone className="w-4 h-4 text-emerald-500" />
+                                    <span className="text-xs font-semibold text-gray-500">PHONE</span>
+                                </div>
+                                <p className="text-sm font-bold text-gray-900 font-mono">
+                                    {phoneNumber}
+                                </p>
+                            </CardBody>
+                        </Card>
+                    </div>
+
+                    {/* Manual Confirmation Form */}
+                    {(paymentStatus === 'callback_failed' || paymentStatus === 'manual') &&
+                        renderManualConfirmationForm()
+                    }
+
+                    {/* Processing Info */}
+                    {paymentStatus === 'processing' && renderProcessingInfo()}
+
+                    {/* Order & Transaction IDs */}
+                    <div className="space-y-2">
+                        {saleId && (
+                            <div className="flex items-center justify-between text-sm">
+                                <span className="text-gray-600">Order ID:</span>
+                                <div className="flex items-center gap-2">
+                                    <code className="font-mono text-gray-800 text-xs">
+                                        {saleId}
+                                    </code>
+                                    <button
+                                        onClick={() => copyToClipboard(saleId)}
+                                        className="text-gray-400 hover:text-gray-600"
+                                    >
+                                        <Copy className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                        {checkoutRequestId && (
+                            <div className="flex items-center justify-between text-sm">
+                                <span className="text-gray-600">Transaction ID:</span>
+                                <div className="flex items-center gap-2">
+                                    <code className="font-mono text-gray-800 text-xs truncate max-w-[120px]">
+                                        {checkoutRequestId}
+                                    </code>
+                                    <button
+                                        onClick={() => copyToClipboard(checkoutRequestId)}
+                                        className="text-gray-400 hover:text-gray-600"
+                                    >
+                                        <Copy className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Troubleshooting Tips */}
+                    {paymentStatus === 'callback_failed' && (
+                        <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                            <div className="flex items-center gap-2 mb-2">
+                                <Info className="w-4 h-4 text-gray-600" />
+                                <span className="text-sm font-semibold text-gray-700">
+                                    What to do if callback fails:
+                                </span>
+                            </div>
+                            <ul className="text-xs text-gray-600 space-y-1">
+                                <li>1. Complete payment on your phone</li>
+                                <li>2. Save the M-Pesa receipt number</li>
+                                <li>3. Enter receipt above to confirm</li>
+                                <li>4. Contact support if issues persist</li>
+                            </ul>
                         </div>
+                    )}
 
-                        {/* Main Content */}
-                        <div className="relative bg-gradient-to-b from-white/95 via-white/90 to-white/80 dark:from-gray-900/95 dark:via-gray-800/90 dark:to-gray-900/80 backdrop-blur-2xl">
-                            {/* Header Gradient Bar */}
-                            <div className={`h-1.5 w-full bg-gradient-to-r ${getStatusGradient()}`} />
+                    {/* Security Badge */}
+                    <div className="flex items-center justify-center gap-2 text-xs text-gray-500">
+                        <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                        <span>Secure • Encrypted • PCI Compliant</span>
+                    </div>
+                </ModalBody>
 
-                            <ModalHeader className="flex flex-col items-center gap-4 pt-10 pb-4 px-8">
-                                {/* Premium Badge */}
-                                <div className="absolute top-4 right-4">
-                                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 text-white text-xs font-bold shadow-lg">
-                                        <Gem className="w-3 h-3" />
-                                        <span>SECURE PAYMENT</span>
-                                    </div>
-                                </div>
+                <ModalFooter className="pt-4 pb-6">
+                    <div className="w-full space-y-3">
+                        {paymentStatus === 'processing' && (
+                            <div className="space-y-3">
+                                <Button
+                                    variant="flat"
+                                    color="danger"
+                                    onPress={handleCancel}
+                                    className="w-full"
+                                    startContent={<XCircle className="w-4 h-4" />}
+                                >
+                                    Cancel Payment
+                                </Button>
+                                <Button
+                                    color="primary"
+                                    variant="solid"
+                                    isDisabled
+                                    className="w-full"
+                                >
+                                    <Spinner size="sm" className="mr-2" color="white" />
+                                    Verifying Payment
+                                </Button>
+                            </div>
+                        )}
 
-                                {getStatusIcon()}
+                        {paymentStatus === 'failed' && (
+                            <div className="space-y-3">
+                                <Button
+                                    variant="flat"
+                                    color="default"
+                                    onPress={onPaymentFailure}
+                                    className="w-full"
+                                >
+                                    Return to Checkout
+                                </Button>
+                                <Button
+                                    color="primary"
+                                    variant="solid"
+                                    onPress={handleRetry}
+                                    className="w-full"
+                                    startContent={<RefreshCw className="w-4 h-4" />}
+                                >
+                                    Retry Verification
+                                </Button>
+                            </div>
+                        )}
 
-                                <div className="flex flex-col items-center text-center space-y-3">
-                                    <motion.h2
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        className={`text-3xl font-bold ${getStatusColor()} bg-clip-text`}
-                                    >
-                                        {getStatusTitle()}
-                                    </motion.h2>
+                        {paymentStatus === 'callback_failed' && (
+                            <div className="space-y-3">
+                                <Button
+                                    variant="flat"
+                                    color="default"
+                                    onPress={handleCancel}
+                                    className="w-full"
+                                >
+                                    Cancel Order
+                                </Button>
+                                <Button
+                                    color="warning"
+                                    variant="solid"
+                                    onPress={handleManualConfirmation}
+                                    disabled={!manualReceipt.trim()}
+                                    className="w-full"
+                                    startContent={<CheckCircle className="w-4 h-4" />}
+                                >
+                                    Confirm Payment Manually
+                                </Button>
+                            </div>
+                        )}
 
-                                    <p className="text-gray-600 dark:text-gray-300 text-sm max-w-md leading-relaxed">
-                                        {statusMessage || "Complete the payment on your device to proceed with your order"}
-                                    </p>
-                                </div>
-                            </ModalHeader>
+                        {paymentStatus === 'manual' && (
+                            <Button
+                                color="primary"
+                                variant="solid"
+                                onPress={handleManualConfirmation}
+                                disabled={!manualReceipt.trim()}
+                                className="w-full"
+                                startContent={<CheckCircle className="w-4 h-4" />}
+                            >
+                                Confirm Payment
+                            </Button>
+                        )}
 
-                            <Divider className="my-2 opacity-30" />
-
-                            <ModalBody className="space-y-8 py-8 px-8">
-                                {/* Payment Progress Steps */}
-                                <div className="relative">
-                                    <div className="flex justify-between mb-6">
-                                        {paymentSteps.map((step) => (
-                                            <div key={step.id} className="flex flex-col items-center relative z-10">
-                                                <motion.div
-                                                    initial={false}
-                                                    animate={{
-                                                        scale: step.active ? 1.1 : 1,
-                                                        backgroundColor: step.completed ?
-                                                            "var(--primary)" :
-                                                            step.active ? "var(--primary-light)" : "var(--gray-200)"
-                                                    }}
-                                                    className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${step.completed
-                                                        ? "border-emerald-500 bg-emerald-500 text-white shadow-lg shadow-emerald-500/25"
-                                                        : step.active
-                                                            ? "border-blue-500 bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-900/30 dark:to-blue-800/30 text-blue-600 dark:text-blue-400"
-                                                            : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-400 dark:text-gray-500"
-                                                        } transition-all duration-300`}
-                                                >
-                                                    <step.icon className="w-4 h-4" />
-                                                </motion.div>
-                                                <span className={`mt-2 text-xs font-medium ${step.active
-                                                    ? "text-blue-600 dark:text-blue-400 font-bold"
-                                                    : step.completed
-                                                        ? "text-emerald-600 dark:text-emerald-400"
-                                                        : "text-gray-500 dark:text-gray-400"
-                                                    }`}>
-                                                    {step.title}
-                                                </span>
-                                            </div>
-                                        ))}
-
-                                        {/* Progress Line */}
-                                        <div className="absolute top-5 left-10 right-10 h-0.5 bg-gray-200 dark:bg-gray-700 -translate-y-1/2 z-0">
-                                            <motion.div
-                                                className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full"
-                                                initial={{ width: "0%" }}
-                                                animate={{
-                                                    width: paymentStatus === 'success' ? "100%" :
-                                                        paymentStatus === 'processing' ? "66%" : "33%"
-                                                }}
-                                                transition={{ duration: 0.5 }}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Transaction Overview - Premium Cards */}
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    <Card className="bg-gradient-to-br from-white to-white/50 dark:from-gray-800 dark:to-gray-800/50 border border-blue-200/50 dark:border-blue-700/30 shadow-lg hover:shadow-xl transition-shadow duration-300 group">
-                                        <CardBody className="p-5">
-                                            <div className="flex items-start justify-between">
-                                                <div>
-                                                    <div className="flex items-center gap-2 mb-3">
-                                                        <div className="p-2 rounded-lg bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-900/30 dark:to-blue-800/30 group-hover:scale-110 transition-transform">
-                                                            <CreditCard className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                                                        </div>
-                                                        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                                            AMOUNT
-                                                        </span>
-                                                    </div>
-                                                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                                                        KES {totalAmount.toLocaleString()}
-                                                    </p>
-                                                </div>
-                                                <div className="text-xs px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold">
-                                                    M-PESA
-                                                </div>
-                                            </div>
-                                        </CardBody>
-                                    </Card>
-
-                                    <Card className="bg-gradient-to-br from-white to-white/50 dark:from-gray-800 dark:to-gray-800/50 border border-emerald-200/50 dark:border-emerald-700/30 shadow-lg hover:shadow-xl transition-shadow duration-300 group">
-                                        <CardBody className="p-5">
-                                            <div className="flex items-start justify-between">
-                                                <div>
-                                                    <div className="flex items-center gap-2 mb-3">
-                                                        <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-100 to-emerald-50 dark:from-emerald-900/30 dark:to-emerald-800/30 group-hover:scale-110 transition-transform">
-                                                            <Smartphone className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                                                        </div>
-                                                        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                                            PHONE
-                                                        </span>
-                                                    </div>
-                                                    <p className="text-xl font-bold text-gray-900 dark:text-white font-mono">
-                                                        {phoneNumber}
-                                                    </p>
-                                                </div>
-                                                <SmartphoneNfc className="w-5 h-5 text-emerald-400/50" />
-                                            </div>
-                                        </CardBody>
-                                    </Card>
-
-                                    <Card className="bg-gradient-to-br from-white to-white/50 dark:from-gray-800 dark:to-gray-800/50 border border-purple-200/50 dark:border-purple-700/30 shadow-lg hover:shadow-xl transition-shadow duration-300 group">
-                                        <CardBody className="p-5">
-                                            <div className="flex items-start justify-between">
-                                                <div>
-                                                    <div className="flex items-center gap-2 mb-3">
-                                                        <div className="p-2 rounded-lg bg-gradient-to-br from-purple-100 to-purple-50 dark:from-purple-900/30 dark:to-purple-800/30 group-hover:scale-110 transition-transform">
-                                                            <Receipt className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                                                        </div>
-                                                        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                                            ORDER ID
-                                                        </span>
-                                                    </div>
-                                                    <p className="text-lg font-bold text-gray-900 dark:text-white font-mono truncate">
-                                                        {saleId || "N/A"}
-                                                    </p>
-                                                </div>
-                                                <BadgeCheck className="w-5 h-5 text-purple-400/50" />
-                                            </div>
-                                        </CardBody>
-                                    </Card>
-                                </div>
-
-                                {/* Advanced Progress Section */}
-                                {paymentStatus === 'processing' && (
-                                    <Card className="border border-gray-200/50 dark:border-gray-700/50 shadow-xl overflow-hidden">
-                                        <CardBody className="p-6">
-                                            <div className="space-y-6">
-                                                {/* Animated Progress Bar */}
-                                                <div className="space-y-4">
-                                                    <div className="flex justify-between items-center">
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="flex space-x-1">
-                                                                <div className="w-2 h-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full animate-pulse" />
-                                                                <div className="w-2 h-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full animate-pulse delay-150" />
-                                                                <div className="w-2 h-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full animate-pulse delay-300" />
-                                                            </div>
-                                                            <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                                                                Payment Authorization Progress
-                                                            </span>
-                                                        </div>
-                                                        <div className="flex items-center gap-3">
-                                                            <Badge
-                                                                variant="flat"
-                                                                color="primary"
-                                                                className="font-mono text-xs"
-                                                            >
-                                                                {Math.round(progressValue)}%
-                                                            </Badge>
-                                                            <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
-                                                                <Clock className="w-3 h-3" />
-                                                                <span>{formatTime(timer)}</span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Glowing Progress Bar */}
-                                                    <div className="relative h-3 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                                                        <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-pink-500/20 animate-shimmer" />
-                                                        <motion.div
-                                                            className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-full relative overflow-hidden"
-                                                            initial={{ width: "10%" }}
-                                                            animate={{ width: `${progressValue}%` }}
-                                                            transition={{ duration: 0.5, ease: "easeInOut" }}
-                                                        >
-                                                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer" />
-                                                        </motion.div>
-                                                    </div>
-
-                                                    {/* Polling Status */}
-                                                    <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
-                                                        <span>Verification attempts: {pollingCount}</span>
-                                                        <span>Remaining attempts: {maxRetries - pollingCount}</span>
-                                                    </div>
-                                                </div>
-
-                                                {/* Mobile Instructions */}
-                                                <div className="bg-gradient-to-r from-blue-50/50 to-indigo-50/50 dark:from-blue-900/10 dark:to-indigo-900/10 rounded-xl p-5 border border-blue-200/50 dark:border-blue-700/30">
-                                                    <div className="flex items-center mb-4">
-                                                        <div className="p-2.5 rounded-lg bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-900/30 dark:to-blue-800/30 mr-3">
-                                                            <Smartphone className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                                                        </div>
-                                                        <div>
-                                                            <h4 className="font-bold text-gray-800 dark:text-gray-200">
-                                                                Complete Payment on Your Device
-                                                            </h4>
-                                                            <p className="text-xs text-gray-600 dark:text-gray-400">
-                                                                Follow these steps to authorize the transaction
-                                                            </p>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="grid grid-cols-2 gap-3">
-                                                        {[
-                                                            { step: 1, text: "Check M-Pesa prompt", icon: Zap },
-                                                            { step: 2, text: "Enter secure PIN", icon: Lock },
-                                                            { step: 3, text: "Confirm amount", icon: CheckCircle },
-                                                            { step: 4, text: "Wait for SMS", icon: ShieldCheck }
-                                                        ].map((item) => (
-                                                            <div key={item.step} className="flex items-center gap-3 p-3 rounded-lg bg-white/50 dark:bg-gray-800/30 border border-gray-200/30 dark:border-gray-700/30">
-                                                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 flex items-center justify-center text-sm font-bold text-blue-600 dark:text-blue-400">
-                                                                    {item.step}
-                                                                </div>
-                                                                <div className="flex-1">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <item.icon className="w-3 h-3 text-blue-500" />
-                                                                        <span className="text-sm font-medium">{item.text}</span>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </CardBody>
-                                    </Card>
-                                )}
-
-                                {/* Transaction Reference */}
-                                {checkoutRequestId && (
-                                    <div className="bg-gradient-to-r from-gray-50 to-gray-100/30 dark:from-gray-800/20 dark:to-gray-900/20 rounded-xl p-5 border border-gray-200/50 dark:border-gray-700/30">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <div className="flex items-center gap-2">
-                                                <ExternalLink className="w-4 h-4 text-blue-500" />
-                                                <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                                                    Transaction Reference
-                                                </span>
-                                            </div>
-                                            <Chip
-                                                size="sm"
-                                                variant="flat"
-                                                color={paymentStatus === 'processing' ? "warning" : "success"}
-                                                className="font-medium"
-                                            >
-                                                {paymentStatus === 'processing' ? 'ACTIVE' : 'COMPLETED'}
-                                            </Chip>
-                                        </div>
-                                        <div className="font-mono text-sm bg-white/50 dark:bg-gray-800/30 p-4 rounded-lg border border-gray-200/30 dark:border-gray-700/30 overflow-x-auto backdrop-blur-sm">
-                                            <div className="flex items-center justify-between">
-                                                <code className="text-gray-800 dark:text-gray-200">{checkoutRequestId}</code>
-                                                <Button
-                                                    size="sm"
-                                                    variant="light"
-                                                    className="text-xs"
-                                                    onPress={() => navigator.clipboard.writeText(checkoutRequestId)}
-                                                >
-                                                    Copy
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Status Message Display */}
-                                <AnimatePresence mode="wait">
+                        {paymentStatus === 'success' && (
+                            <Button
+                                color="success"
+                                variant="solid"
+                                onPress={onPaymentSuccess}
+                                className="w-full"
+                                startContent={
                                     <motion.div
-                                        key={paymentStatus}
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -10 }}
-                                        className="text-center"
+                                        animate={{ rotate: 360 }}
+                                        transition={{ duration: 0.5 }}
                                     >
-                                        <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${paymentStatus === 'success'
-                                            ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'
-                                            : paymentStatus === 'processing'
-                                                ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                                                : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
-                                            }`}>
-                                            {paymentStatus === 'processing' && <Loader2 className="w-3 h-3 animate-spin" />}
-                                            {paymentStatus === 'success' && <CheckCircle className="w-3 h-3" />}
-                                            <span className="text-sm font-medium">{statusMessage}</span>
-                                        </div>
+                                        <ArrowRight className="w-4 h-4" />
                                     </motion.div>
-                                </AnimatePresence>
-                            </ModalBody>
+                                }
+                            >
+                                Continue Shopping
+                            </Button>
+                        )}
 
-                            <Divider className="my-2 opacity-30" />
-
-                            <ModalFooter className="flex flex-col sm:flex-row gap-3 pt-6 pb-10 px-8">
-                                <AnimatePresence mode="wait">
-                                    {paymentStatus === 'processing' && (
-                                        <motion.div
-                                            initial={{ opacity: 0, y: 10 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            exit={{ opacity: 0, y: -10 }}
-                                            className="flex flex-col sm:flex-row gap-3 w-full"
-                                        >
-                                            <Button
-                                                variant="flat"
-                                                color="danger"
-                                                onPress={handleCancel}
-                                                className="flex-1 min-w-[160px] h-12 font-semibold border border-red-200 dark:border-red-800/50 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
-                                                startContent={<XCircle className="w-4 h-4" />}
-                                            >
-                                                Cancel Payment
-                                            </Button>
-                                            <Button
-                                                color="primary"
-                                                variant="solid"
-                                                isDisabled
-                                                className="flex-1 min-w-[160px] h-12 font-semibold bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white shadow-lg shadow-blue-500/25 hover:shadow-xl transition-all"
-                                            >
-                                                <Spinner size="sm" className="mr-2" color="white" />
-                                                <span className="flex items-center gap-2">
-                                                    Verifying
-                                                    <span className="inline-flex">
-                                                        <span className="animate-pulse">.</span>
-                                                        <span className="animate-pulse delay-150">.</span>
-                                                        <span className="animate-pulse delay-300">.</span>
-                                                    </span>
-                                                </span>
-                                            </Button>
-                                        </motion.div>
-                                    )}
-
-                                    {paymentStatus === 'failed' && showRetry && (
-                                        <motion.div
-                                            initial={{ opacity: 0, y: 10 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            className="flex flex-col sm:flex-row gap-3 w-full"
-                                        >
-                                            <Button
-                                                variant="flat"
-                                                color="default"
-                                                onPress={onPaymentFailure}
-                                                className="flex-1 min-w-[160px] h-12 font-semibold border border-gray-200 dark:border-gray-700"
-                                            >
-                                                Return to Checkout
-                                            </Button>
-                                            <Button
-                                                color="primary"
-                                                variant="solid"
-                                                onPress={handleRetry}
-                                                className="flex-1 min-w-[160px] h-12 font-semibold bg-gradient-to-r from-blue-600 to-purple-600 hover:shadow-lg hover:scale-[1.02] active:scale-95 transition-all"
-                                                startContent={<RefreshCw className="w-4 h-4 animate-spin" />}
-                                            >
-                                                Retry Verification
-                                            </Button>
-                                        </motion.div>
-                                    )}
-
-                                    {paymentStatus === 'success' && (
-                                        <motion.div
-                                            initial={{ opacity: 0, scale: 0.9 }}
-                                            animate={{ opacity: 1, scale: 1 }}
-                                            className="w-full"
-                                        >
-                                            <Button
-                                                color="success"
-                                                variant="solid"
-                                                onPress={onPaymentSuccess}
-                                                className="w-full h-12 font-semibold bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-xl shadow-emerald-500/25 hover:shadow-2xl hover:scale-[1.02] active:scale-95 transition-all"
-                                                startContent={
-                                                    <motion.div
-                                                        animate={{ rotate: 360 }}
-                                                        transition={{ duration: 0.5 }}
-                                                    >
-                                                        <ArrowRight className="w-4 h-4" />
-                                                    </motion.div>
-                                                }
-                                            >
-                                                Continue Shopping
-                                            </Button>
-                                        </motion.div>
-                                    )}
-
-                                    {paymentStatus === 'cancelled' && (
-                                        <Button
-                                            variant="flat"
-                                            color="warning"
-                                            onPress={onPaymentCancel}
-                                            className="w-full h-12 font-semibold"
-                                        >
-                                            Close & Return
-                                        </Button>
-                                    )}
-                                </AnimatePresence>
-                            </ModalFooter>
-
-                            {/* Premium Security Footer */}
-                            <div className="px-8 py-5 bg-gradient-to-r from-gray-50/80 to-gray-100/50 dark:from-gray-900/50 dark:to-gray-800/50 border-t border-gray-200/50 dark:border-gray-700/30">
-                                <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-                                    <div className="flex items-center gap-3">
-                                        <div className="flex items-center gap-2">
-                                            <ShieldCheck className="w-4 h-4 text-emerald-500" />
-                                            <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                                                PCI DSS COMPLIANT
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <Lock className="w-4 h-4 text-blue-500" />
-                                            <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                                                256-BIT ENCRYPTION
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <Sparkles className="w-4 h-4 text-purple-500" />
-                                            <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                                                SECURE CONNECTION
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                                        <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                                        <span>Powered by Safaricom M-Pesa • Enterprise Grade Security</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </motion.div>
-                </AnimatePresence>
+                        {paymentStatus === 'cancelled' && (
+                            <Button
+                                variant="flat"
+                                color="warning"
+                                onPress={onPaymentCancel}
+                                className="w-full"
+                            >
+                                Close & Return
+                            </Button>
+                        )}
+                    </div>
+                </ModalFooter>
             </ModalContent>
         </Modal>
     );

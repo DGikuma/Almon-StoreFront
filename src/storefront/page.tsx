@@ -10,7 +10,7 @@ import TrackOrderPopup from "@/components/TrackOrderPopup";
 import DeliveryModal from "@/components/DeliveryModal";
 import CookieConsentBanner from "@/components/CookieConsentBanner";
 import { motion, AnimatePresence } from "framer-motion";
-import { Tabs, Tab } from "@heroui/react";
+import { Tabs, Tab, Pagination, Button } from "@heroui/react";
 import {
   SunIcon,
   MoonIcon,
@@ -27,7 +27,9 @@ import {
   CheckCircleIcon,
   ArrowRightIcon,
   LifebuoyIcon,
-  BuildingOfficeIcon
+  BuildingOfficeIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon as ChevronRightIconSolid
 } from "@heroicons/react/24/outline";
 import { fetchProducts, pollProducts, type FrontendProduct } from "@/lib/productService";
 
@@ -229,10 +231,19 @@ export default function StorefrontPage() {
   const [deliveryArea] = useState<string>("");
   const [scrolled, setScrolled] = useState(false);
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 6;
+
   // Product state from API
   const [apiProducts, setApiProducts] = useState<FrontendProduct[]>([]);
   const [useApiProducts] = useState(true);
   const [stats, setStats] = useState({ products: 0, orders: 1254, clients: 987, delivery: 99.2 });
+
+  // Reset pagination when tab changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab]);
 
   // Stats animation effect
   useEffect(() => {
@@ -333,6 +344,14 @@ export default function StorefrontPage() {
     });
     return grouped;
   }, [filteredProducts]);
+
+  // Get paginated products for current tab
+  const currentTabProducts = productsByType[activeTab as keyof typeof productsByType] || [];
+  const totalPages = Math.ceil(currentTabProducts.length / itemsPerPage);
+  const paginatedProducts = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return currentTabProducts.slice(startIndex, startIndex + itemsPerPage);
+  }, [currentTabProducts, currentPage, itemsPerPage]);
 
   // Selected variants state
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
@@ -526,6 +545,69 @@ export default function StorefrontPage() {
           </div>
         </div>
       </motion.div>
+    );
+  };
+
+  // Custom pagination component for better mobile adaptation
+  const CustomPagination = () => {
+    if (totalPages <= 1) return null;
+
+    return (
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-12">
+        <div className="text-sm text-gray-600 dark:text-gray-400">
+          Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, currentTabProducts.length)} of {currentTabProducts.length} products
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            isDisabled={currentPage === 1}
+            onPress={() => setCurrentPage(prev => prev - 1)}
+            variant="light"
+            size="sm"
+            className="min-w-10"
+          >
+            <ChevronLeftIcon className="w-4 h-4" />
+          </Button>
+
+          <div className="flex items-center gap-1">
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              let pageNum;
+              if (totalPages <= 5) {
+                pageNum = i + 1;
+              } else if (currentPage <= 3) {
+                pageNum = i + 1;
+              } else if (currentPage >= totalPages - 2) {
+                pageNum = totalPages - 4 + i;
+              } else {
+                pageNum = currentPage - 2 + i;
+              }
+
+              return (
+                <Button
+                  key={pageNum}
+                  onPress={() => setCurrentPage(pageNum)}
+                  variant={currentPage === pageNum ? "solid" : "light"}
+                  color={currentPage === pageNum ? "primary" : "default"}
+                  size="sm"
+                  className={`min-w-10 ${currentPage === pageNum ? '!text-white' : ''}`}
+                >
+                  {pageNum}
+                </Button>
+              );
+            })}
+          </div>
+
+          <Button
+            isDisabled={currentPage === totalPages}
+            onPress={() => setCurrentPage(prev => prev + 1)}
+            variant="light"
+            size="sm"
+            className="min-w-10"
+          >
+            <ChevronRightIconSolid className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
     );
   };
 
@@ -861,7 +943,7 @@ export default function StorefrontPage() {
             </motion.p>
           </div>
 
-          {/* Enhanced Tabs */}
+          {/* Enhanced Tabs - Mobile Adaptive */}
           <div className="mb-16">
             <Tabs
               selectedKey={activeTab}
@@ -869,18 +951,18 @@ export default function StorefrontPage() {
               variant="light"
               classNames={{
                 base: "w-full",
-                tabList: "gap-2 w-full relative rounded-2xl p-2 bg-gradient-to-r from-gray-100 to-gray-50/50 dark:from-gray-900 dark:to-gray-800/50 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50",
-                tab: "h-14 px-8 rounded-xl data-[selected=true]:bg-white dark:data-[selected=true]:bg-gray-800 data-[selected=true]:shadow-2xl transition-all duration-300",
-                tabContent: "font-semibold text-sm uppercase tracking-wider text-gray-800 dark:text-gray-200 group-data-[selected=true]:text-blue-600 dark:group-data-[selected=true]:text-blue-400"
+                tabList: "gap-2 w-full relative rounded-2xl p-2 bg-gradient-to-r from-gray-100 to-gray-50/50 dark:from-gray-900 dark:to-gray-800/50 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 overflow-x-auto flex-nowrap",
+                tab: "h-14 px-6 rounded-xl data-[selected=true]:bg-gradient-to-r data-[selected=true]:from-blue-600 data-[selected=true]:to-cyan-500 data-[selected=true]:shadow-2xl transition-all duration-300 whitespace-nowrap",
+                tabContent: "font-semibold text-sm uppercase tracking-wider text-gray-800 dark:text-gray-200 group-data-[selected=true]:text-white"
               }}
             >
               {(["roll", "metre", "board", "unit"] as const).map((tabKey) => {
                 const tabProducts = productsByType[tabKey] || [];
                 const tabLabels = {
-                  roll: { label: "ROLL MATERIALS", icon: "🔄" },
-                  metre: { label: "METERED PRODUCTS", icon: "📏" },
-                  board: { label: "BOARD SUBSTRATES", icon: "📋" },
-                  unit: { label: "UNIT ITEMS", icon: "📦" },
+                  roll: { label: "ROLL MATERIALS" },
+                  metre: { label: "METERED PRODUCTS" },
+                  board: { label: "BOARD SUBSTRATES" },
+                  unit: { label: "UNIT ITEMS" },
                 };
 
                 return (
@@ -888,7 +970,6 @@ export default function StorefrontPage() {
                     key={tabKey}
                     title={
                       <div className="flex items-center space-x-3">
-                        <span className="text-lg">{tabLabels[tabKey].icon}</span>
                         <span>{tabLabels[tabKey].label}</span>
                         <span className="px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs font-bold">
                           {tabProducts.length}
@@ -897,7 +978,7 @@ export default function StorefrontPage() {
                     }
                   >
                     <div className="mt-12">
-                      {tabProducts.length === 0 ? (
+                      {paginatedProducts.length === 0 ? (
                         <div className="text-center py-32">
                           <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center">
                             <BuildingStorefrontIcon className="w-12 h-12 text-gray-400" />
@@ -910,11 +991,16 @@ export default function StorefrontPage() {
                           </p>
                         </div>
                       ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                          {tabProducts.map((product, index) => (
-                            <ProductCard key={product.id} product={product} index={index} />
-                          ))}
-                        </div>
+                        <>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                            {paginatedProducts.map((product, index) => (
+                              <ProductCard key={product.id} product={product} index={index} />
+                            ))}
+                          </div>
+
+                          {/* Custom Pagination */}
+                          <CustomPagination />
+                        </>
                       )}
                     </div>
                   </Tab>
