@@ -10,7 +10,7 @@ import TrackOrderPopup from "@/components/TrackOrderPopup";
 import DeliveryModal from "@/components/DeliveryModal";
 import CookieConsentBanner from "@/components/CookieConsentBanner";
 import { motion, AnimatePresence } from "framer-motion";
-import { Tabs, Tab, Pagination, Button } from "@heroui/react";
+import { Tabs, Tab, Button } from "@heroui/react";
 import {
   SunIcon,
   MoonIcon,
@@ -732,18 +732,18 @@ export default function StorefrontPage() {
 
               {/* Mobile Actions */}
               <div className="md:hidden flex items-center gap-2">
-                <button
+                <Button
                   onClick={() => setTrackModalOpen(true)}
                   className="p-3 rounded-xl bg-gradient-to-br from-gray-100 to-gray-50 dark:from-gray-800 dark:to-gray-900 border border-gray-200/50 dark:border-gray-700/50"
                 >
                   <ShieldCheckIcon className="w-5 h-5 text-gray-700 dark:text-gray-300" />
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={() => setDeliveryModalOpen(true)}
                   className="p-3 rounded-xl bg-gradient-to-br from-blue-100 to-cyan-50 dark:from-blue-900/30 dark:to-cyan-900/30 border border-blue-200/50 dark:border-blue-700/50"
                 >
                   <TruckIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                </button>
+                </Button>
               </div>
             </div>
           </div>

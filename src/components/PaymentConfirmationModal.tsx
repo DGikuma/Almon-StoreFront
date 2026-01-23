@@ -48,6 +48,15 @@ interface PaymentConfirmationModalProps {
     onPaymentCancel: () => void;
 }
 
+// Define payment interface for type safety
+interface Payment {
+    status: string;
+    mpesa_receipt_number?: string;
+    mpesaReceiptNumber?: string;
+    receipt_number?: string;
+    mpesa_receipt?: string;
+}
+
 export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> = ({
     isOpen,
     onClose,
@@ -62,13 +71,11 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
     const [paymentStatus, setPaymentStatus] = useState<'pending' | 'processing' | 'success' | 'failed' | 'cancelled' | 'manual' | 'callback_failed'>('pending');
     const [pollingCount, setPollingCount] = useState(0);
     const [statusMessage, setStatusMessage] = useState("");
-    const [showRetry, setShowRetry] = useState(false);
     const [timer, setTimer] = useState(180);
     const [mpesaReceipt, setMpesaReceipt] = useState<string | null>(null);
     const [manualReceipt, setManualReceipt] = useState("");
     const [customerName, setCustomerName] = useState("");
     const [notes, setNotes] = useState("");
-    const [debugInfo, setDebugInfo] = useState<any>(null);
 
     const pollingRef = useRef<NodeJS.Timeout | null>(null);
     const retryCountRef = useRef(0);
@@ -82,17 +89,15 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
             setPaymentStatus('pending');
             setPollingCount(0);
             setStatusMessage("");
-            setShowRetry(false);
             setTimer(180);
             setMpesaReceipt(null);
             setManualReceipt("");
-            setDebugInfo(null);
             retryCountRef.current = 0;
 
             // Start polling immediately
-            setTimeout(() => {
+            setTimeout(async () => {
                 if (checkoutRequestId) {
-                    startPaymentPolling();
+                    await startPaymentPolling(); // Changed to await
                 } else {
                     startManualPolling();
                 }
@@ -105,17 +110,34 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
         };
     }, [isOpen]);
 
-    // Countdown timer
+    const [countdown, setCountdown] = useState(5);
+
+    // In PaymentConfirmationModal, update the useEffect for success state
     useEffect(() => {
-        if (paymentStatus === 'processing' && timer > 0) {
-            timerRef.current = setInterval(() => {
-                setTimer(prev => prev > 0 ? prev - 1 : 0);
-            }, 1000);
+        if (paymentStatus === 'success') {
+            // Clear cart and auto-close after 5 seconds
+            setTimeout(() => {
+                onPaymentSuccess();
+            }, 5000);
         }
-        return () => {
-            if (timerRef.current) clearInterval(timerRef.current);
-        };
-    }, [paymentStatus, timer]);
+    }, [paymentStatus, onPaymentSuccess]);
+
+    useEffect(() => {
+        if (paymentStatus === 'success') {
+            const interval = setInterval(() => {
+                setCountdown(prev => {
+                    if (prev <= 1) {
+                        clearInterval(interval);
+                        onPaymentSuccess();
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+
+            return () => clearInterval(interval);
+        }
+    }, [paymentStatus, onPaymentSuccess]);
 
     // Main polling function for queryStatus endpoint
     const queryPaymentStatus = async (checkoutReqId: string, currentPollingCount: number): Promise<{
@@ -132,7 +154,6 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
 
             const result = response.data;
             console.log("QueryStatus response:", result);
-            setDebugInfo(result);
 
             // Check various response formats
             let resultCode, resultDesc, mpesaReceiptNumber;
@@ -185,7 +206,7 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
                         // Check if any payment in the sale is completed
                         if (saleData.payments && Array.isArray(saleData.payments)) {
                             const completedPayment = saleData.payments.find(
-                                (p: any) => p.status === 'completed' || p.status === 'paid'
+                                (p: Payment) => p.status === 'completed' || p.status === 'paid'
                             );
 
                             if (completedPayment) {
@@ -289,7 +310,7 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
                     if (saleData.status === 'paid' || saleData.status === 'completed') {
                         if (saleData.payments && Array.isArray(saleData.payments)) {
                             const payment = saleData.payments.find(
-                                (p: any) => p.status === 'completed' || p.status === 'paid'
+                                (p: Payment) => p.status === 'completed' || p.status === 'paid'
                             );
                             if (payment) {
                                 setMpesaReceipt(payment.mpesa_receipt_number || payment.receipt_number);
@@ -308,11 +329,6 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
 
             // Handle 500 errors - callback probably didn't work
             if (error.response?.status === 500) {
-                setDebugInfo({
-                    error: "Backend callback issue",
-                    message: "M-Pesa callback may not have reached our servers"
-                });
-
                 // After 30 seconds of polling, switch to manual mode
                 if (currentPollingCount >= 6) { // 30 seconds
                     return {
@@ -337,13 +353,77 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
         }
     };
 
-    const startPaymentPolling = () => {
+    const startPaymentPolling = async () => {
         if (!checkoutRequestId) {
             setPaymentStatus('manual');
             setStatusMessage("No transaction ID. Please complete payment and enter receipt manually.");
             return;
         }
 
+        // First check if the sale is already marked as paid/completed
+        const checkSaleStatusDirectly = async () => {
+            if (!saleId) return false;
+
+            try {
+                const response = await axios.get(`${API_BASE_URL}/customer/orders/${saleId}`);
+                const saleData = response.data;
+
+                console.log("Direct sale status check:", saleData.status, saleData);
+
+                // Check if sale is already marked as paid
+                if (saleData.status === 'paid' || saleData.status === 'completed') {
+                    setPaymentStatus('success');
+                    setStatusMessage("Payment already confirmed!");
+
+                    // Try to get receipt from payments array
+                    if (saleData.payments && Array.isArray(saleData.payments) && saleData.payments.length > 0) {
+                        const payment = saleData.payments.find((p: Payment) => p.status === 'completed' || p.status === 'paid') || saleData.payments[0];
+                        if (payment) {
+                            const receipt = payment.mpesa_receipt_number ||
+                                payment.mpesaReceiptNumber ||
+                                payment.receipt_number ||
+                                payment.mpesa_receipt;
+                            if (receipt) setMpesaReceipt(receipt);
+                        }
+                    }
+
+                    setTimeout(() => onPaymentSuccess(), 1000);
+                    return true;
+                }
+
+                // Also check if there's a completed payment even if sale status is pending
+                if (saleData.payments && Array.isArray(saleData.payments)) {
+                    const completedPayment = saleData.payments.find(
+                        (p: Payment) => p.status === 'completed' || p.status === 'paid'
+                    );
+                    if (completedPayment) {
+                        setPaymentStatus('success');
+                        setStatusMessage("Payment found in sale record!");
+
+                        const receipt = completedPayment.mpesa_receipt_number ||
+                            completedPayment.mpesaReceiptNumber ||
+                            completedPayment.receipt_number ||
+                            completedPayment.mpesa_receipt;
+                        if (receipt) setMpesaReceipt(receipt);
+
+                        setTimeout(() => onPaymentSuccess(), 1000);
+                        return true;
+                    }
+                }
+            } catch (error) {
+                console.log("Could not check sale status:", error);
+            }
+            return false;
+        };
+
+        // Call it before starting polling
+        const isAlreadyPaid = await checkSaleStatusDirectly();
+        if (isAlreadyPaid) {
+            console.log("Sale is already paid, skipping polling");
+            return;
+        }
+
+        // Only start polling if sale is not already paid
         setPaymentStatus('processing');
         setStatusMessage("Awaiting PIN authorization on your device");
         setTimer(180);
@@ -355,6 +435,21 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
                 if (retryCountRef.current >= maxRetries) {
                     setPaymentStatus('callback_failed');
                     setStatusMessage("M-Pesa callback timeout. Please check your statement and provide receipt.");
+
+                    // Even at timeout, check one more time if sale is paid
+                    if (saleId) {
+                        try {
+                            const response = await axios.get(`${API_BASE_URL}/customer/orders/${saleId}`);
+                            const saleData = response.data;
+                            if (saleData.status === 'paid' || saleData.status === 'completed') {
+                                setPaymentStatus('success');
+                                setStatusMessage("Payment was actually completed!");
+                                setTimeout(() => onPaymentSuccess(), 1000);
+                            }
+                        } catch (error) {
+                            // Ignore error at timeout
+                        }
+                    }
                 }
                 return;
             }
@@ -378,7 +473,6 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
                     pollingRef.current = null;
                     setPaymentStatus('failed');
                     setStatusMessage(statusResult.message);
-                    setShowRetry(true);
                 }
                 else if (statusResult.status === 'callback_failed') {
                     clearInterval(pollingRef.current as NodeJS.Timeout);
@@ -436,7 +530,7 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
         setStatusMessage("Manually confirming payment...");
 
         try {
-            // Try to update the order with manual payment confirmation
+            // First try the specific endpoint
             const response = await axios.post(`${API_BASE_URL}/customer/orders/${saleId}/manual-pay`, {
                 mpesa_receipt: manualReceipt,
                 customer_name: customerName,
@@ -451,36 +545,48 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
                 setMpesaReceipt(manualReceipt);
                 setTimeout(() => onPaymentSuccess(), 1500);
             } else {
-                setPaymentStatus('callback_failed');
-                setStatusMessage("Manual confirmation failed. Please contact support.");
+                // Fallback to regular pay endpoint
+                await axios.post(`${API_BASE_URL}/customer/orders/${saleId}/pay`, {
+                    status: 'paid',
+                    mpesa_receipt: manualReceipt,
+                    payment_method: 'mpesa'
+                });
+                setPaymentStatus('success');
+                setStatusMessage("Payment recorded!");
+                setMpesaReceipt(manualReceipt);
+                setTimeout(() => onPaymentSuccess(), 1500);
             }
         } catch (error: any) {
             console.error("Manual confirmation error:", error);
 
-            // If endpoint doesn't exist, simulate success for now
-            if (error.response?.status === 404) {
+            // Try fallback endpoint
+            try {
+                await axios.post(`${API_BASE_URL}/customer/orders/${saleId}/pay`, {
+                    status: 'paid',
+                    mpesa_receipt: manualReceipt,
+                    payment_method: 'mpesa'
+                });
                 setPaymentStatus('success');
-                setStatusMessage("Payment recorded (manual confirmation)");
+                setStatusMessage("Payment recorded (fallback)");
                 setMpesaReceipt(manualReceipt);
                 setTimeout(() => onPaymentSuccess(), 1500);
-            } else {
+            } catch (fallbackError) {
                 setPaymentStatus('callback_failed');
                 setStatusMessage("Could not confirm payment. Please contact support with receipt: " + manualReceipt);
             }
         }
     };
 
-    const handleRetry = () => {
+    const handleRetry = async () => {
         if (pollingRef.current) {
             clearInterval(pollingRef.current);
             pollingRef.current = null;
         }
         setPaymentStatus('pending');
         setPollingCount(0);
-        setShowRetry(false);
         setTimer(180);
         setStatusMessage("Retrying payment verification...");
-        setTimeout(() => startPaymentPolling(), 1000);
+        await startPaymentPolling(); // Changed to await
     };
 
     const handleCancel = () => {
@@ -726,12 +832,12 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
                                 <span className="text-xs font-mono text-emerald-600">
                                     Receipt: {mpesaReceipt}
                                 </span>
-                                <button
+                                <Button
                                     onClick={() => copyToClipboard(mpesaReceipt)}
                                     className="text-gray-400 hover:text-gray-600"
                                 >
                                     <Copy className="w-3 h-3" />
-                                </button>
+                                </Button>
                             </div>
                         )}
                     </div>
@@ -782,12 +888,12 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
                                     <code className="font-mono text-gray-800 text-xs">
                                         {saleId}
                                     </code>
-                                    <button
+                                    <Button
                                         onClick={() => copyToClipboard(saleId)}
                                         className="text-gray-400 hover:text-gray-600"
                                     >
                                         <Copy className="w-3 h-3" />
-                                    </button>
+                                    </Button>
                                 </div>
                             </div>
                         )}
@@ -798,12 +904,12 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
                                     <code className="font-mono text-gray-800 text-xs truncate max-w-[120px]">
                                         {checkoutRequestId}
                                     </code>
-                                    <button
+                                    <Button
                                         onClick={() => copyToClipboard(checkoutRequestId)}
                                         className="text-gray-400 hover:text-gray-600"
                                     >
                                         <Copy className="w-3 h-3" />
-                                    </button>
+                                    </Button>
                                 </div>
                             </div>
                         )}
@@ -932,7 +1038,7 @@ export const PaymentConfirmationModal: React.FC<PaymentConfirmationModalProps> =
                                     </motion.div>
                                 }
                             >
-                                Continue Shopping
+                                Continue Shopping (Auto-closing in {countdown})
                             </Button>
                         )}
 

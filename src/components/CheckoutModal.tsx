@@ -134,7 +134,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   // Order and payment states
   const [saleId, setSaleId] = useState<string | null>(null);
   const [checkoutRequestId, setCheckoutRequestId] = useState<string | null>(null);
-  const [existingOrderData, setExistingOrderData] = useState<any>(null);
 
   // Modal states
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -154,7 +153,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setStatus(null);
     setSaleId(null);
     setCheckoutRequestId(null);
-    setExistingOrderData(null);
     setActiveStep('details');
   };
 
@@ -211,6 +209,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     try {
       const response = await axios.get(`${API_BASE_URL}/customer/orders/${orderId}`);
       const orderData = response.data;
+      console.log("Existing order check response:", orderData);
 
       // Check if order has completed payments
       const hasCompletedPayment = orderData.payments?.some((payment: any) =>
@@ -223,35 +222,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         hasCompletedPayment
       };
     } catch (error: any) {
+      console.log("Order check error:", error.response?.status, error.response?.data || error.message);
       if (error.response?.status === 404) {
         return { exists: false };
       }
       return { exists: false };
-    }
-  };
-
-  // Fix order status if payment is completed but order is pending
-  const fixOrderStatus = async (orderId: string, mpesaReceipt: string): Promise<boolean> => {
-    try {
-      const response = await axios.post(`${API_BASE_URL}/customer/orders/${orderId}/mark-paid`, {
-        mpesa_receipt: mpesaReceipt,
-        payment_method: 'mpesa'
-      });
-      return response.status === 200 || response.status === 201;
-    } catch (error: any) {
-      console.error("Error fixing order status:", error);
-
-      // Try alternative endpoint
-      try {
-        const altResponse = await axios.post(`${API_BASE_URL}/customer/orders/${orderId}/pay`, {
-          status: 'paid',
-          mpesa_receipt: mpesaReceipt,
-          payment_method: 'mpesa'
-        });
-        return altResponse.status === 200 || altResponse.status === 201;
-      } catch (altError) {
-        return false;
-      }
     }
   };
 
@@ -279,21 +254,40 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }
     }
 
-    // STEP 1: Try the correct API endpoint based on the documentation
-    // The documentation shows: POST /customer/orders/{orderId}/pay
+    // Use the correct endpoint for STK push
     try {
+      console.log("Initiating STK push via:", `${API_BASE_URL}/customer/orders/${orderId}/pay`);
+
+      // According to API docs, we need to include sale_id in the request body
+      const requestData = {
+        sale_id: orderId, // This is required based on the API documentation
+        payment_method: "mpesa",
+        phone_number: formattedPhone,
+        amount: amount
+        // Note: According to docs, these are optional for card payments:
+        // card_transaction_id: "",
+        // card_holder_name: "",
+        // card_last4: ""
+      };
+
+      console.log("Request data:", requestData);
+
       const response = await axios.post(
         `${API_BASE_URL}/customer/orders/${orderId}/pay`,
+        requestData,
         {
-          phone_number: formattedPhone,
-          payment_method: "mpesa",
-          amount: amount
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          timeout: 30000
         }
       );
 
       stkPushResponseData = response.data;
+      console.log("STK Push Response:", stkPushResponseData);
 
-      // Extract checkoutRequestId from the response based on typical M-Pesa STK response structure
+      // Extract checkoutRequestId from the response
+      // Check various possible field names
       checkoutRequestId =
         stkPushResponseData?.CheckoutRequestID ||
         stkPushResponseData?.checkoutRequestID ||
@@ -301,7 +295,35 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         stkPushResponseData?.data?.CheckoutRequestID ||
         stkPushResponseData?.MerchantRequestID ||
         stkPushResponseData?.merchantRequestID ||
-        stkPushResponseData?.request_id;
+        stkPushResponseData?.request_id ||
+        stkPushResponseData?.checkout_request_id ||
+        stkPushResponseData?.mpesa_checkout_request_id;
+
+      // If we can't find checkoutRequestId, check if maybe the payment is already completed
+      if (!checkoutRequestId) {
+        console.warn("No checkoutRequestId found in response. Checking if payment is already complete...");
+
+        // Check if the response indicates payment is already done
+        if (stkPushResponseData?.mpesa_receipt_number || stkPushResponseData?.receipt_number) {
+          return {
+            alreadyPaid: true,
+            checkoutRequestID: stkPushResponseData?.mpesa_checkout_request_id,
+            mpesaReceiptNumber: stkPushResponseData?.mpesa_receipt_number || stkPushResponseData?.receipt_number,
+            message: "Payment already completed"
+          };
+        }
+
+        // Check for success message without checkout ID
+        if (stkPushResponseData?.message?.toLowerCase().includes("success") ||
+          stkPushResponseData?.status === "success") {
+          console.log("Payment initiated but no checkout ID returned");
+          // We'll consider this a success and let the polling handle it
+          return {
+            success: true,
+            message: "Payment initiated. Please check your phone."
+          };
+        }
+      }
 
       // Check if response indicates already paid
       if (stkPushResponseData?.message?.toLowerCase().includes("already paid") ||
@@ -309,50 +331,51 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         stkPushResponseData?.status === "already_paid") {
         return {
           alreadyPaid: true,
+          checkoutRequestID: checkoutRequestId,
           message: "Payment already completed"
         };
+      }
+
+      // Check for error messages
+      if (stkPushResponseData?.error || stkPushResponseData?.ResponseCode !== "0") {
+        const errorMsg = stkPushResponseData?.message || stkPushResponseData?.error || "STK push failed";
+        console.error("STK push error:", errorMsg);
+        throw new Error(errorMsg);
       }
 
     } catch (error: any) {
       console.error("Error initiating M-Pesa payment:", error.response?.data || error.message);
 
-      // Try alternative endpoint if the first one fails
-      try {
-        console.log("Trying alternative payment endpoint...");
-
-        const altResponse = await axios.post(
-          `${API_BASE_URL}/payments/stk-push`,
-          {
-            amount: amount,
-            phone_number: formattedPhone,
-            account_reference: orderId,
-            transaction_desc: `Payment for order ${orderId}`
-          }
-        );
-
-        stkPushResponseData = altResponse.data;
-
-        checkoutRequestId =
-          altResponse.data?.CheckoutRequestID ||
-          altResponse.data?.checkoutRequestID ||
-          altResponse.data?.MerchantRequestID;
-
-      } catch (altError: any) {
-        console.error("Alternative payment endpoint also failed:", altError.response?.data || altError.message);
-
-        // Check if error indicates already paid
-        const errorData = altError.response?.data;
-        const errorMsg = JSON.stringify(errorData).toLowerCase();
-
-        if (errorMsg.includes("already paid") || errorMsg.includes("duplicate") || errorMsg.includes("completed")) {
-          return {
-            alreadyPaid: true,
-            message: "Payment may already be completed. Checking status..."
-          };
-        }
-
-        throw new Error("Failed to initiate payment. Please try again or contact support.");
+      // Log detailed error information
+      if (error.response?.data?.message) {
+        console.error("Error messages:", error.response.data.message);
       }
+
+      // Provide more specific error message
+      let errorMessage = "Failed to initiate payment. ";
+
+      if (error.response?.status === 404) {
+        errorMessage += "Endpoint not found. Please check the order ID.";
+      } else if (error.response?.status === 400) {
+        errorMessage += "Bad request. Please check the payment details.";
+
+        // Add specific validation errors if available
+        if (error.response?.data?.message && Array.isArray(error.response.data.message)) {
+          errorMessage += " Validation errors: " + error.response.data.message.join(", ");
+        }
+      } else if (error.response?.data?.error) {
+        errorMessage += error.response.data.error;
+      } else if (error.response?.data?.message) {
+        errorMessage += error.response.data.message;
+      } else if (error.message) {
+        errorMessage += error.message;
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    if (!checkoutRequestId && !stkPushResponseData?.alreadyPaid) {
+      throw new Error("Payment initiation failed: No transaction ID received from server.");
     }
 
     return {
@@ -397,7 +420,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       setLoading(true);
       const orderData = formatOrderData();
       let rawSaleId: string | null = null;
-      let existingOrderWithPayment = false;
 
       // Step 1: Submit order
       if (onOrderSubmit) {
@@ -407,26 +429,25 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         }
       } else {
         try {
+          console.log("Creating order with data:", orderData);
           const orderRes = await axios.post(`${API_BASE_URL}/customer/orders`, orderData);
+          console.log("Order creation response:", orderRes.data);
           rawSaleId = orderRes.data?.sale_id || orderRes.data?.id || orderRes.data?.order_id || null;
-
-          // Check if we got a previously created order
-          if (orderRes.data?.existing) {
-            existingOrderWithPayment = true;
-            setExistingOrderData(orderRes.data);
-          }
         } catch (error: any) {
-          // Check if error is due to duplicate order creation
+          console.error("Order creation error:", error.response?.data || error.message);
+
           if (error.response?.status === 400 || error.response?.status === 409) {
-            // Try to extract order ID from error or create a new one
             const errorMsg = error.response.data?.message || "";
             const match = errorMsg.match(/SAL\d+/i);
             if (match) {
               rawSaleId = match[0];
-              existingOrderWithPayment = true;
+              console.log("Extracted order ID from error:", rawSaleId);
             }
           }
-          throw error;
+
+          if (!rawSaleId) {
+            throw error;
+          }
         }
       }
 
@@ -442,42 +463,54 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       const orderCheck = await checkExistingOrder(normalizedSaleId);
 
       if (orderCheck.exists && orderCheck.hasCompletedPayment) {
-        // Order already has completed payment
-        const completedPayment = orderCheck.data.payments.find((p: any) =>
-          p.status === 'completed' || p.status === 'paid'
-        );
+        // Order already has completed payment - clear cart immediately
+        if (onClearCart) onClearCart();
 
         setStatus({
-          type: 'info',
-          message: `Order ${normalizedSaleId} already has a completed payment.`
+          type: 'success',
+          message: `Payment already completed for order ${normalizedSaleId}. Your cart has been cleared.`
         });
 
-        setCheckoutRequestId(completedPayment?.mpesa_checkout_request_id || null);
-        setShowPaymentModal(true);
-        setActiveStep('payment');
+        setCheckoutRequestId(orderCheck.data.payments?.find((p: any) =>
+          p.status === 'completed' || p.status === 'paid'
+        )?.mpesa_checkout_request_id || null);
+
+        // Show success message and auto-close after 5 seconds
+        setTimeout(() => {
+          handleModalClose();
+          if (onCheckoutSuccess) onCheckoutSuccess();
+        }, 5000);
+
         return;
       }
 
       // Step 3: Initiate payment if no completed payment exists
       try {
+        console.log("Initiating payment for order:", normalizedSaleId);
         const paymentResponse = await initiateMpesaPayment(normalizedSaleId, phoneNumber, grandTotal);
 
+        console.log("Payment initiation response:", paymentResponse);
+
         if (paymentResponse.alreadyPaid) {
-          // Payment already completed
+          // Payment already completed - clear cart immediately
+          if (onClearCart) onClearCart();
+
           setStatus({
-            type: 'info',
-            message: `Order ${normalizedSaleId} may already be paid. Checking status...`
+            type: 'success',
+            message: `Payment already completed for order ${normalizedSaleId}. Your cart has been cleared.`
           });
 
           // Check order again to get updated payment details
-          const updatedOrderCheck = await checkExistingOrder(normalizedSaleId);
-          if (updatedOrderCheck.exists) {
-            setExistingOrderData(updatedOrderCheck.data);
-          }
+          await checkExistingOrder(normalizedSaleId);
 
           setCheckoutRequestId(paymentResponse.checkoutRequestID || null);
-          setShowPaymentModal(true);
-          setActiveStep('payment');
+
+          // Show success message and auto-close after 5 seconds
+          setTimeout(() => {
+            handleModalClose();
+            if (onCheckoutSuccess) onCheckoutSuccess();
+          }, 5000);
+
         } else {
           // New payment initiated
           const extractedCheckoutId = paymentResponse?.CheckoutRequestID || paymentResponse?.checkoutRequestID;
@@ -492,40 +525,46 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           setActiveStep('payment');
         }
 
-      } catch (error) {
+      } catch (error: any) {
+        console.error("Payment initiation error:", error);
         setStatus({
           type: 'warning',
-          message: `Order ${normalizedSaleId} created. Please check your phone - payment system is experiencing issues but may still work.`
+          message: `Order ${normalizedSaleId} created. Payment initiation failed: ${error.message}. Please contact support.`
         });
+        // Still show payment modal for manual confirmation
         setShowPaymentModal(true);
       }
     } catch (error: any) {
       let errorMessage = "An error occurred. Please try again.";
 
-      // Handle specific error cases
       if (error.response?.data?.message) {
         if (Array.isArray(error.response.data.message)) {
           errorMessage = error.response.data.message.join(", ");
         } else {
           errorMessage = error.response.data.message;
 
-          // Check for duplicate order error
           if (errorMessage.includes("already exists") || errorMessage.includes("duplicate")) {
-            // Try to extract order ID
             const match = errorMessage.match(/SAL\d+/i);
             if (match) {
               const existingOrderId = match[0];
               setSaleId(existingOrderId);
 
-              // Check if this order already has payment
               const orderCheck = await checkExistingOrder(existingOrderId);
               if (orderCheck.exists && orderCheck.hasCompletedPayment) {
+                // Clear cart immediately for existing paid order
+                if (onClearCart) onClearCart();
+
                 setStatus({
-                  type: 'info',
-                  message: `Order ${existingOrderId} already exists with completed payment.`
+                  type: 'success',
+                  message: `Order ${existingOrderId} already exists with completed payment. Your cart has been cleared.`
                 });
-                setShowPaymentModal(true);
-                setActiveStep('payment');
+
+                // Show success message and auto-close after 5 seconds
+                setTimeout(() => {
+                  handleModalClose();
+                  if (onCheckoutSuccess) onCheckoutSuccess();
+                }, 5000);
+
                 return;
               } else {
                 errorMessage = `Order ${existingOrderId} already exists. Please try a different order or contact support.`;
@@ -547,9 +586,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   };
 
   const handlePaymentSuccess = () => {
-    handleModalClose();
-    if (onCheckoutSuccess) onCheckoutSuccess();
+    // Clear cart when payment is successful
     if (onClearCart) onClearCart();
+
+    // Show success message before closing
+    setStatus({
+      type: 'success',
+      message: "Payment completed successfully! Your cart has been cleared. Closing in 5 seconds..."
+    });
+
+    // Auto-close after 5 seconds
+    setTimeout(() => {
+      handleModalClose();
+      if (onCheckoutSuccess) onCheckoutSuccess();
+    }, 5000);
   };
 
   const handlePaymentFailure = () => {
