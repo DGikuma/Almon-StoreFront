@@ -16,7 +16,7 @@ import {
 } from "@heroui/react";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
-import { PaymentConfirmationModal } from "./PaymentConfirmationModal";
+import toast, { Toaster } from "react-hot-toast";
 import {
   CreditCardIcon,
   UserCircleIcon,
@@ -130,40 +130,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   // Loading and status states
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info' | 'warning', message: string } | null>(null);
-  const [countdown, setCountdown] = useState<number | null>(null);
 
   // Order and payment states
   const [saleId, setSaleId] = useState<string | null>(null);
   const [checkoutRequestId, setCheckoutRequestId] = useState<string | null>(null);
 
   // Modal states
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [activeStep, setActiveStep] = useState<'details' | 'review' | 'payment'>('details');
 
   const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const vat = subtotal * 0.16;
   const grandTotal = subtotal + vat + deliveryFee;
-
-  // Countdown timer effect
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (countdown !== null && countdown > 0) {
-      interval = setInterval(() => {
-        setCountdown(prev => {
-          if (prev && prev <= 1) {
-            clearInterval(interval);
-            handleModalClose();
-            if (onCheckoutSuccess) onCheckoutSuccess();
-            return 0;
-          }
-          return prev ? prev - 1 : 0;
-        });
-      }, 1000);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [countdown, onCheckoutSuccess]);
 
   // Reset form function
   const resetForm = () => {
@@ -176,7 +153,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setSaleId(null);
     setCheckoutRequestId(null);
     setActiveStep('details');
-    setCountdown(null);
   };
 
   // Handle modal close with form reset
@@ -397,6 +373,67 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     };
   };
 
+  const showSuccessToast = (message: string, orderId?: string) => {
+    toast.success(
+      <div className="flex flex-col gap-1">
+        <span className="font-semibold">{message}</span>
+        {orderId && (
+          <span className="text-sm text-gray-600">Order ID: {orderId}</span>
+        )}
+        <span className="text-sm">Check your phone to complete the payment</span>
+      </div>,
+      {
+        duration: 5000,
+        position: 'top-right',
+        icon: '✅',
+        style: {
+          background: '#10b981',
+          color: 'white',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      }
+    );
+  };
+
+  const showErrorToast = (message: string) => {
+    toast.error(
+      <div className="flex flex-col gap-1">
+        <span className="font-semibold">{message}</span>
+      </div>,
+      {
+        duration: 5000,
+        position: 'top-right',
+        icon: '❌',
+        style: {
+          background: '#ef4444',
+          color: 'white',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      }
+    );
+  };
+
+  const showInfoToast = (message: string) => {
+    toast(
+      <div className="flex flex-col gap-1">
+        <span className="font-semibold">{message}</span>
+      </div>,
+      {
+        duration: 5000,
+        position: 'top-right',
+        icon: '📱',
+        style: {
+          background: '#3b82f6',
+          color: 'white',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      }
+    );
+  };
+
   const handleSubmit = async () => {
     setStatus(null);
 
@@ -476,15 +513,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         // Order already has completed payment - clear cart immediately
         if (onClearCart) onClearCart();
 
-        setStatus({
-          type: 'success',
-          message: `Payment already completed for order ${normalizedSaleId}. Your cart has been cleared. Closing in 5 seconds...`
-        });
+        // Show success toast
+        showSuccessToast(
+          `Order ${normalizedSaleId} placed successfully! Your cart has been cleared.`,
+          normalizedSaleId
+        );
 
-        setCountdown(5);
-        setCheckoutRequestId(orderCheck.data.payments?.find((p: any) =>
-          p.status === 'completed' || p.status === 'paid'
-        )?.mpesa_checkout_request_id || null);
+        // Close modal after 5 seconds
+        setTimeout(() => {
+          handleModalClose();
+          if (onCheckoutSuccess) onCheckoutSuccess();
+        }, 5000);
 
         return;
       }
@@ -500,36 +539,53 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           // Payment already completed - clear cart immediately
           if (onClearCart) onClearCart();
 
-          setStatus({
-            type: 'success',
-            message: `Payment already completed for order ${normalizedSaleId}. Your cart has been cleared. Closing in 5 seconds...`
-          });
+          // Show success toast
+          showSuccessToast(
+            `Order ${normalizedSaleId} placed successfully! Your cart has been cleared.`,
+            normalizedSaleId
+          );
 
-          setCountdown(5);
-          await checkExistingOrder(normalizedSaleId);
-          setCheckoutRequestId(paymentResponse.checkoutRequestID || null);
+          // Close modal after 5 seconds
+          setTimeout(() => {
+            handleModalClose();
+            if (onCheckoutSuccess) onCheckoutSuccess();
+          }, 5000);
+
         } else {
           // New payment initiated
-          const extractedCheckoutId = paymentResponse?.CheckoutRequestID || paymentResponse?.checkoutRequestID;
+          // Clear cart when payment is initiated
+          if (onClearCart) onClearCart();
 
+          // Show info toast for payment initiation
+          showInfoToast(
+            `Order ${normalizedSaleId} created! Check your phone to complete the M-Pesa payment.`
+          );
+
+          // Show success message in modal
           setStatus({
-            type: 'info',
-            message: `Order ${normalizedSaleId} created. Please check your phone for the M-Pesa prompt.`
+            type: 'success',
+            message: `Order ${normalizedSaleId} created successfully! Check your phone to complete payment.`
           });
 
-          setCheckoutRequestId(extractedCheckoutId);
-          setShowPaymentModal(true);
-          setActiveStep('payment');
+          // Close modal after 5 seconds
+          setTimeout(() => {
+            handleModalClose();
+            if (onCheckoutSuccess) onCheckoutSuccess();
+          }, 5000);
         }
 
       } catch (error: any) {
         console.error("Payment initiation error:", error);
+
+        // Show error toast
+        showErrorToast(
+          `Order ${normalizedSaleId} created but payment initiation failed. Please contact support.`
+        );
+
         setStatus({
           type: 'warning',
           message: `Order ${normalizedSaleId} created. Payment initiation failed: ${error.message}. Please contact support.`
         });
-        // Still show payment modal for manual confirmation
-        setShowPaymentModal(true);
       }
     } catch (error: any) {
       let errorMessage = "An error occurred. Please try again.";
@@ -551,12 +607,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 // Clear cart immediately for existing paid order
                 if (onClearCart) onClearCart();
 
-                setStatus({
-                  type: 'success',
-                  message: `Order ${existingOrderId} already exists with completed payment. Your cart has been cleared. Closing in 5 seconds...`
-                });
+                // Show success toast
+                showSuccessToast(
+                  `Order ${existingOrderId} already exists with completed payment. Your cart has been cleared.`,
+                  existingOrderId
+                );
 
-                setCountdown(5);
+                // Close modal after 5 seconds
+                setTimeout(() => {
+                  handleModalClose();
+                  if (onCheckoutSuccess) onCheckoutSuccess();
+                }, 5000);
+
                 return;
               } else {
                 errorMessage = `Order ${existingOrderId} already exists. Please try a different order or contact support.`;
@@ -568,6 +630,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         errorMessage = error.message;
       }
 
+      // Show error toast
+      showErrorToast(errorMessage);
+
       setStatus({
         type: 'error',
         message: errorMessage
@@ -575,35 +640,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     } finally {
       setLoading(false);
     }
-  };
-
-  const handlePaymentSuccess = () => {
-    // Clear cart when payment is successful
-    if (onClearCart) onClearCart();
-
-    // Show success message before closing
-    setStatus({
-      type: 'success',
-      message: "Payment completed successfully! Your cart has been cleared. Closing in 5 seconds..."
-    });
-
-    setCountdown(5);
-  };
-
-  const handlePaymentFailure = () => {
-    setShowPaymentModal(false);
-    setStatus({
-      type: 'error',
-      message: "Payment was not completed. Please try again."
-    });
-  };
-
-  const handlePaymentCancel = () => {
-    setShowPaymentModal(false);
-    setStatus({
-      type: 'warning',
-      message: "Payment was cancelled. You can try again or modify your order."
-    });
   };
 
   const isFormValid = () => {
@@ -671,9 +707,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   return (
     <>
+      {/* Add Toaster for toast notifications */}
+      <Toaster />
+
       {/* Main Checkout Modal */}
       <Modal
-        isOpen={isOpen && !showPaymentModal}  // Only show when not showing payment modal
+        isOpen={isOpen}
         onClose={handleModalClose}
         size="5xl"
         scrollBehavior="outside"
@@ -982,13 +1021,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       <div className="flex-1">
                         <p className="text-sm text-gray-700 dark:text-gray-300">
                           {status.message}
-                          {countdown !== null && countdown > 0 && status.type === 'success' && (
-                            <span className="font-bold ml-1">({countdown})</span>
-                          )}
                         </p>
                         {saleId && (
                           <p className="text-xs font-mono text-gray-500 dark:text-gray-400 mt-2">
-                            REF: {saleId}
+                            Order ID: {saleId}
                           </p>
                         )}
                       </div>
@@ -1046,7 +1082,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-semibold min-w-[240px] py-6 hover:shadow-xl hover:scale-[1.02] transition-all duration-300"
                     startContent={<CreditCardIcon className="w-5 h-5" />}
                   >
-                    {loading ? "Processing..." : "Initiate M-Pesa Payment"}
+                    {loading ? "Processing..." : "Place Order & Pay"}
                   </Button>
                 )}
               </div>
@@ -1054,24 +1090,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </ModalFooter>
         </ModalContent>
       </Modal>
-
-      {/* Payment Confirmation Modal */}
-      {showPaymentModal && (
-        <PaymentConfirmationModal
-          isOpen={showPaymentModal}
-          onClose={() => {
-            setShowPaymentModal(false);
-            handlePaymentCancel();
-          }}
-          saleId={saleId}
-          checkoutRequestId={checkoutRequestId}
-          phoneNumber={phoneNumber}
-          totalAmount={grandTotal}
-          onPaymentSuccess={handlePaymentSuccess}
-          onPaymentFailure={handlePaymentFailure}
-          onPaymentCancel={handlePaymentCancel}
-        />
-      )}
     </>
   );
 };
