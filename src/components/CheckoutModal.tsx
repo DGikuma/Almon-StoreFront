@@ -809,7 +809,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                           <div className="space-y-4">
                             <Input
-                              label="Full Name"
                               placeholder="John Doe"
                               value={customerName}
                               onChange={(e) => setCustomerName(e.target.value)}
@@ -823,7 +822,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             />
                             <Input
                               type="tel"
-                              label="Phone Number"
                               placeholder="07XXXXXXXX"
                               value={phoneNumber}
                               onChange={(e) => setPhoneNumber(e.target.value)}
@@ -850,8 +848,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                           <div className="space-y-4">
                             <Input
-                              label="Recipient Name"
-                              placeholder="Jane Smith"
+                              placeholder="Recipient Name"
                               value={recipientName}
                               onChange={(e) => setRecipientName(e.target.value)}
                               isRequired
@@ -864,7 +861,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             />
                             <Input
                               type="tel"
-                              label="Recipient Phone"
                               placeholder="07XXXXXXXX"
                               value={recipientPhone}
                               onChange={(e) => setRecipientPhone(e.target.value)}
@@ -878,7 +874,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                               }}
                             />
                             <Input
-                              label="Delivery Address"
                               placeholder="Building, Street, Floor, Landmarks"
                               value={deliveryAddress}
                               onChange={(e) => setDeliveryAddress(e.target.value)}

@@ -10,7 +10,7 @@ import TrackOrderPopup from "@/components/TrackOrderPopup";
 import DeliveryModal from "@/components/DeliveryModal";
 import CookieConsentBanner from "@/components/CookieConsentBanner";
 import { motion, AnimatePresence } from "framer-motion";
-import { Tabs, Tab, Button } from "@heroui/react";
+import { Tabs, Tab, Button, Select, SelectItem } from "@heroui/react";
 import {
   SunIcon,
   MoonIcon,
@@ -29,7 +29,9 @@ import {
   LifebuoyIcon,
   BuildingOfficeIcon,
   ChevronLeftIcon,
-  ChevronRightIcon as ChevronRightIconSolid
+  Squares2X2Icon,
+  Bars3Icon,
+  XMarkIcon
 } from "@heroicons/react/24/outline";
 import { fetchProducts, pollProducts, type FrontendProduct } from "@/lib/productService";
 
@@ -216,6 +218,158 @@ const useTheme = () => {
   return { theme, toggle };
 };
 
+// Mobile Tabs Component
+const MobileTabs = ({
+  activeTab,
+  setActiveTab,
+  productsByType
+}: {
+  activeTab: string;
+  setActiveTab: (tab: string) => void;
+  productsByType: Record<"roll" | "metre" | "board" | "unit", any[]>;
+}) => {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const tabs = [
+    { key: "roll", label: "ROLL MATERIALS", icon: Squares2X2Icon },
+    { key: "metre", label: "METERED PRODUCTS", icon: ChartBarIcon },
+    { key: "board", label: "BOARD SUBSTRATES", icon: Squares2X2Icon },
+    { key: "unit", label: "UNIT ITEMS", icon: ShoppingBagIcon },
+  ] as const;
+
+  const activeTabData = tabs.find(tab => tab.key === activeTab);
+  const productCount = productsByType[activeTab as keyof typeof productsByType]?.length || 0;
+
+  return (
+    <div className="md:hidden mb-8">
+      {/* Mobile Tab Selector */}
+      <div className="flex items-center gap-3 mb-6">
+        <Button
+          onPress={() => setMobileMenuOpen(!mobileMenuOpen)}
+          variant="flat"
+          className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
+          startContent={<Bars3Icon className="w-5 h-5" />}
+        >
+          Categories
+        </Button>
+
+        <div className="flex-1">
+          <Select
+            selectedKeys={[activeTab]}
+            onSelectionChange={(keys) => {
+              const key = Array.from(keys)[0] as string;
+              setActiveTab(key);
+            }}
+            className="max-w-xs"
+            variant="bordered"
+            aria-label="Select product category"
+            classNames={{
+              trigger: "h-12 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700",
+              value: "text-sm font-semibold",
+            }}
+          >
+            {tabs.map((tab) => (
+              <SelectItem key={tab.key} textValue={tab.label}>
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${activeTab === tab.key ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-gray-100 dark:bg-gray-800'}`}>
+                    <tab.icon className={`w-4 h-4 ${activeTab === tab.key ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`} />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-sm">{tab.label}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      {productsByType[tab.key as keyof typeof productsByType]?.length || 0} products
+                    </div>
+                  </div>
+                </div>
+              </SelectItem>
+            ))}
+          </Select>
+        </div>
+      </div>
+
+      {/* Current Tab Info */}
+      {activeTabData && (
+        <div className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-2xl p-4 mb-6 border border-blue-200 dark:border-blue-800">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-white dark:bg-gray-800">
+                <activeTabData.icon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 dark:text-white text-lg">{activeTabData.label}</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{productCount} products available</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs text-gray-500 dark:text-gray-400">Current</div>
+              <div className="font-bold text-blue-600 dark:text-blue-400 text-lg">
+                {productCount}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Tab Grid (when menu is open) */}
+      {mobileMenuOpen && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setMobileMenuOpen(false)}
+        >
+          <div
+            className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-md max-h-[80vh] overflow-y-auto p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">Categories</h3>
+              <Button
+                isIconOnly
+                variant="light"
+                onPress={() => setMobileMenuOpen(false)}
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {tabs.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.key;
+                const count = productsByType[tab.key as keyof typeof productsByType]?.length || 0;
+
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => {
+                      setActiveTab(tab.key);
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`p-4 rounded-xl flex flex-col items-center justify-center transition-all duration-300 ${isActive
+                      ? 'bg-gradient-to-br from-blue-600 to-cyan-500 text-white shadow-lg'
+                      : 'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700'
+                      }`}
+                  >
+                    <Icon className={`w-8 h-8 mb-2 ${isActive ? 'text-white' : 'text-gray-600 dark:text-gray-400'}`} />
+                    <span className={`font-semibold text-sm text-center ${isActive ? 'text-white' : 'text-gray-900 dark:text-white'}`}>
+                      {tab.label.split(' ')[0]}
+                    </span>
+                    <span className={`text-xs mt-1 ${isActive ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'}`}>
+                      {count} items
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </motion.div>
+      )}
+    </div>
+  );
+};
+
 // ---------- Page Component ----------
 export default function StorefrontPage() {
   const navigate = useNavigate();
@@ -390,8 +544,6 @@ export default function StorefrontPage() {
     }
   };
 
-  // Add these functions to your main page component:
-
   // Clear all items from cart
   const handleClearCart = () => {
     console.log("Clearing cart...");
@@ -404,9 +556,6 @@ export default function StorefrontPage() {
     setCart([]);
     setCheckoutOpen(false);
     setDrawerOpen(false);
-
-    // Optional: Show success message
-    // You could add a toast notification here
   };
 
   const handleIncrease = (cartId: string) => {
@@ -518,6 +667,7 @@ export default function StorefrontPage() {
                 value={selectedVariant}
                 onChange={(e) => handleVariantChange(product.id, e.target.value)}
                 className="w-full px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                aria-label={`Select variant for ${product.name}`}
               >
                 {product.variants.map((variant) => (
                   <option key={variant} value={variant}>
@@ -623,7 +773,7 @@ export default function StorefrontPage() {
             size="sm"
             className="min-w-10"
           >
-            <ChevronRightIconSolid className="w-4 h-4" />
+            <ChevronRightIcon className="w-4 h-4" />
           </Button>
         </div>
       </div>
@@ -669,31 +819,31 @@ export default function StorefrontPage() {
           : 'bg-gradient-to-b from-white/95 via-white/90 to-transparent dark:from-gray-950/95 dark:via-gray-900/90 dark:to-transparent py-6'
           }`}
       >
-        <div className="max-w-8xl mx-auto px-6 lg:px-8">
+        <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
             {/* Logo & Brand */}
-            <Link to="/" className="flex items-center space-x-4 group">
+            <Link to="/" className="flex items-center space-x-3 group flex-shrink-0">
               <div className="relative">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 via-blue-500 to-cyan-500 p-0.5 shadow-2xl shadow-blue-500/30">
+                <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-blue-600 via-blue-500 to-cyan-500 p-0.5 shadow-2xl shadow-blue-500/30">
                   <div className="w-full h-full rounded-xl bg-white dark:bg-gray-900 flex items-center justify-center">
-                    <div className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-500 bg-clip-text text-transparent">
+                    <div className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-500 bg-clip-text text-transparent">
                       AP
                     </div>
                   </div>
                 </div>
-                <div className="absolute -top-1 -right-1 w-4 h-4 bg-gradient-to-r from-emerald-400 to-cyan-400 rounded-full animate-pulse" />
+                <div className="absolute -top-1 -right-1 w-3 h-3 sm:w-4 sm:h-4 bg-gradient-to-r from-emerald-400 to-cyan-400 rounded-full animate-pulse" />
               </div>
-              <div>
-                <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 via-gray-800 to-gray-700 dark:from-white dark:via-gray-200 dark:to-gray-300">
+              <div className="hidden sm:block">
+                <h1 className="text-xl sm:text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 via-gray-800 to-gray-700 dark:from-white dark:via-gray-200 dark:to-gray-300">
                   Almon<span className="text-blue-600 dark:text-blue-400">Products</span>
                 </h1>
-                <p className="text-sm text-gray-600 dark:text-gray-400 font-medium tracking-wide">
+                <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 font-medium tracking-wide">
                   ENTERPRISE SOLUTIONS
                 </p>
               </div>
             </Link>
 
-            {/* Navigation */}
+            {/* Navigation for Desktop */}
             <nav className="hidden lg:flex items-center space-x-8">
               <Link to="/products" className="relative text-sm font-semibold text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors group">
                 Products
@@ -714,19 +864,37 @@ export default function StorefrontPage() {
             </nav>
 
             {/* Actions */}
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2 sm:space-x-4">
               <button
                 onClick={toggle}
-                className="p-3 rounded-xl bg-gradient-to-br from-gray-100 to-gray-50 dark:from-gray-800 dark:to-gray-900 border border-gray-200/50 dark:border-gray-700/50 hover:shadow-lg transition-all duration-300 group"
+                className="p-2 sm:p-3 rounded-xl bg-gradient-to-br from-gray-100 to-gray-50 dark:from-gray-800 dark:to-gray-900 border border-gray-200/50 dark:border-gray-700/50 hover:shadow-lg transition-all duration-300 group"
               >
                 {theme === 'dark' ? (
-                  <SunIcon className="w-5 h-5 text-amber-500 group-hover:rotate-180 transition-transform duration-700" />
+                  <SunIcon className="w-4 h-4 sm:w-5 sm:h-5 text-amber-500 group-hover:rotate-180 transition-transform duration-700" />
                 ) : (
-                  <MoonIcon className="w-5 h-5 text-blue-600 group-hover:rotate-180 transition-transform duration-700" />
+                  <MoonIcon className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 group-hover:rotate-180 transition-transform duration-700" />
                 )}
               </button>
 
-              {/* Track Order Button */}
+              {/* Track Order Button - Mobile */}
+              <button
+                onClick={() => setTrackModalOpen(true)}
+                className="flex md:hidden items-center space-x-2 px-3 py-2 rounded-xl bg-gradient-to-r from-gray-900 to-gray-800 dark:from-gray-800 dark:to-gray-900 text-white font-semibold hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all duration-300 border border-gray-700/50"
+              >
+                <ShieldCheckIcon className="w-4 h-4" />
+                <span className="text-xs">Track</span>
+              </button>
+
+              {/* Delivery Button - Mobile */}
+              <button
+                onClick={() => setDeliveryModalOpen(true)}
+                className="flex md:hidden items-center space-x-2 px-3 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all duration-300 border border-blue-500/50"
+              >
+                <TruckIcon className="w-4 h-4" />
+                <span className="text-xs">Delivery</span>
+              </button>
+
+              {/* Track Order Button - Desktop */}
               <button
                 onClick={() => setTrackModalOpen(true)}
                 className="hidden md:flex items-center space-x-3 px-6 py-3 rounded-xl bg-gradient-to-r from-gray-900 to-gray-800 dark:from-gray-800 dark:to-gray-900 text-white font-semibold hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all duration-300 border border-gray-700/50"
@@ -735,7 +903,7 @@ export default function StorefrontPage() {
                 <span>Track Order</span>
               </button>
 
-              {/* Delivery Button */}
+              {/* Delivery Button - Desktop */}
               <button
                 onClick={() => setDeliveryModalOpen(true)}
                 className="hidden md:flex items-center space-x-3 px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all duration-300 border border-blue-500/50"
@@ -749,20 +917,33 @@ export default function StorefrontPage() {
                 onOpen={() => setDrawerOpen(true)}
               />
 
-              {/* Mobile Actions */}
-              <div className="md:hidden flex items-center gap-2">
-                <Button
-                  onClick={() => setTrackModalOpen(true)}
-                  className="p-3 rounded-xl bg-gradient-to-br from-gray-100 to-gray-50 dark:from-gray-800 dark:to-gray-900 border border-gray-200/50 dark:border-gray-700/50"
-                >
-                  <ShieldCheckIcon className="w-5 h-5 text-gray-700 dark:text-gray-300" />
-                </Button>
-                <Button
-                  onClick={() => setDeliveryModalOpen(true)}
-                  className="p-3 rounded-xl bg-gradient-to-br from-blue-100 to-cyan-50 dark:from-blue-900/30 dark:to-cyan-900/30 border border-blue-200/50 dark:border-blue-700/50"
-                >
-                  <TruckIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                </Button>
+              {/* Mobile Menu Button */}
+              <Button className="lg:hidden p-2 rounded-xl bg-gradient-to-br from-gray-100 to-gray-50 dark:from-gray-800 dark:to-gray-900 border border-gray-200/50 dark:border-gray-700/50">
+                <Bars3Icon className="w-5 h-5 text-gray-700 dark:text-gray-300" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Mobile Navigation Menu */}
+          <div className="lg:hidden mt-4 pt-4 border-t border-gray-200/50 dark:border-gray-700/50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <Link to="/products" className="text-sm font-semibold text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                  Products
+                </Link>
+                <Link to="/enterprise" className="text-sm font-semibold text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                  Enterprise
+                </Link>
+                <Link to="/support" className="text-sm font-semibold text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                  Support
+                </Link>
+              </div>
+              <div className="flex items-center space-x-2">
+                <SearchBar
+                  query={search}
+                  onSearch={setSearch}
+                  className="!py-2 !px-3 !rounded-lg !bg-white/80 dark:!bg-gray-800/80 backdrop-blur-xl !border-gray-200 dark:!border-gray-700"
+                />
               </div>
             </div>
           </div>
@@ -770,7 +951,7 @@ export default function StorefrontPage() {
       </motion.header>
 
       {/* ------------------- EXECUTIVE HERO SECTION ------------------- */}
-      <section className="relative pt-40 pb-28 overflow-hidden">
+      <section className="relative pt-32 pb-20 sm:pt-40 sm:pb-28 overflow-hidden">
         {/* Geometric Background */}
         <div className="absolute inset-0">
           <div className="absolute top-0 left-0 w-full h-full">
@@ -779,8 +960,8 @@ export default function StorefrontPage() {
           </div>
         </div>
 
-        <div className="relative max-w-8xl mx-auto px-6 lg:px-8">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
+        <div className="relative max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid lg:grid-cols-2 gap-8 sm:gap-16 items-center">
             {/* Hero Content */}
             <motion.div
               initial={{ opacity: 0, x: -50 }}
@@ -788,14 +969,14 @@ export default function StorefrontPage() {
               transition={{ duration: 0.8, delay: 0.2 }}
               className="relative"
             >
-              <div className="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border border-blue-500/20 dark:border-blue-400/20 mb-8">
-                <RocketLaunchIcon className="w-4 h-4 text-blue-600 dark:text-blue-400 mr-2" />
-                <span className="text-sm font-semibold text-blue-700 dark:text-blue-300">
+              <div className="inline-flex items-center px-3 py-1.5 sm:px-4 sm:py-2 rounded-full bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border border-blue-500/20 dark:border-blue-400/20 mb-6 sm:mb-8">
+                <RocketLaunchIcon className="w-3 h-3 sm:w-4 sm:h-4 text-blue-600 dark:text-blue-400 mr-2" />
+                <span className="text-xs sm:text-sm font-semibold text-blue-700 dark:text-blue-300">
                   ENTERPRISE GRADE MATERIALS
                 </span>
               </div>
 
-              <h1 className="text-5xl lg:text-6xl xl:text-7xl font-bold leading-tight mb-8">
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold leading-tight mb-6 sm:mb-8">
                 <span className="bg-clip-text text-transparent bg-gradient-to-r from-gray-900 via-gray-800 to-gray-700 dark:from-white dark:via-gray-200 dark:to-gray-300">
                   Premium Industrial
                 </span>
@@ -805,30 +986,30 @@ export default function StorefrontPage() {
                 </span>
               </h1>
 
-              <p className="text-xl text-gray-600 dark:text-gray-300 mb-10 leading-relaxed max-w-2xl">
+              <p className="text-base sm:text-lg lg:text-xl text-gray-600 dark:text-gray-300 mb-8 sm:mb-10 leading-relaxed max-w-2xl">
                 Delivering excellence through certified materials, enterprise-grade solutions,
                 and professional support for businesses that demand uncompromising quality.
               </p>
 
               {/* CTA Buttons */}
-              <div className="flex flex-wrap gap-4 mb-12">
+              <div className="flex flex-wrap gap-3 sm:gap-4 mb-8 sm:mb-12">
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => document.getElementById('products-section')?.scrollIntoView({ behavior: 'smooth' })}
-                  className="px-8 py-4 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold hover:shadow-2xl transition-all duration-300 flex items-center group"
+                  className="px-6 py-3 sm:px-8 sm:py-4 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold hover:shadow-2xl transition-all duration-300 flex items-center group"
                 >
-                  <span>Explore Products</span>
-                  <ChevronRightIcon className="w-5 h-5 ml-2 group-hover:translate-x-2 transition-transform" />
+                  <span className="text-sm sm:text-base">Explore Products</span>
+                  <ChevronRightIcon className="w-4 h-4 sm:w-5 sm:h-5 ml-2 group-hover:translate-x-2 transition-transform" />
                 </motion.button>
 
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => navigate('/quotation')}
-                  className="px-8 py-4 rounded-xl border-2 border-gray-800 dark:border-gray-700 text-gray-800 dark:text-gray-200 font-semibold hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all duration-300"
+                  className="px-6 py-3 sm:px-8 sm:py-4 rounded-xl border-2 border-gray-800 dark:border-gray-700 text-gray-800 dark:text-gray-200 font-semibold hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all duration-300 text-sm sm:text-base"
                 >
-                  Request Enterprise Quote
+                  Request Quote
                 </motion.button>
               </div>
 
@@ -837,17 +1018,17 @@ export default function StorefrontPage() {
                 <SearchBar
                   query={search}
                   onSearch={setSearch}
-                  className="!py-4 !px-6 !rounded-xl !bg-white/80 dark:!bg-gray-800/80 backdrop-blur-xl !border-gray-200 dark:!border-gray-700 !shadow-2xl"
+                  className="!py-3 sm:!py-4 !px-4 sm:!px-6 !rounded-xl !bg-white/80 dark:!bg-gray-800/80 backdrop-blur-xl !border-gray-200 dark:!border-gray-700 !shadow-2xl"
                 />
               </div>
             </motion.div>
 
-            {/* Hero Visual */}
+            {/* Hero Visual - Hidden on small mobile, shown on tablet+ */}
             <motion.div
               initial={{ opacity: 0, x: 50 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.8, delay: 0.4 }}
-              className="relative"
+              className="relative hidden sm:block"
             >
               <div className="relative rounded-3xl overflow-hidden shadow-4xl">
                 <div className="aspect-[4/3] bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
@@ -861,16 +1042,16 @@ export default function StorefrontPage() {
                   }} />
 
                   {/* Floating Elements */}
-                  <div className="absolute inset-0 p-12">
+                  <div className="absolute inset-0 p-8 sm:p-12">
                     <motion.div
                       animate={{ y: [0, -30, 0] }}
                       transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-                      className="absolute top-8 left-8 w-48 h-48 rounded-2xl bg-gradient-to-br from-blue-600/20 to-cyan-500/20 backdrop-blur-xl border border-white/10"
+                      className="absolute top-8 left-8 w-32 h-32 sm:w-48 sm:h-48 rounded-2xl bg-gradient-to-br from-blue-600/20 to-cyan-500/20 backdrop-blur-xl border border-white/10"
                     />
                     <motion.div
                       animate={{ y: [0, 30, 0] }}
                       transition={{ duration: 7, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
-                      className="absolute bottom-8 right-8 w-64 h-64 rounded-2xl bg-gradient-to-tr from-blue-600/20 to-purple-600/20 backdrop-blur-xl border border-white/10"
+                      className="absolute bottom-8 right-8 w-48 h-48 sm:w-64 sm:h-64 rounded-2xl bg-gradient-to-tr from-blue-600/20 to-purple-600/20 backdrop-blur-xl border border-white/10"
                     />
                   </div>
                 </div>
@@ -881,9 +1062,9 @@ export default function StorefrontPage() {
       </section>
 
       {/* ------------------- EXECUTIVE STATS SECTION ------------------- */}
-      <section className="relative py-24">
-        <div className="max-w-8xl mx-auto px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+      <section className="relative py-16 sm:py-24">
+        <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-8">
             {corporateStats.map((stat, index) => (
               <motion.div
                 key={stat.label}
@@ -893,17 +1074,17 @@ export default function StorefrontPage() {
                 transition={{ duration: 0.6, delay: index * 0.1 }}
                 className="relative group"
               >
-                <div className="bg-gradient-to-br from-white/80 to-white/40 dark:from-gray-900/80 dark:to-gray-800/40 backdrop-blur-2xl rounded-2xl p-8 border border-gray-200/50 dark:border-gray-700/50 shadow-2xl hover:shadow-4xl transition-all duration-500">
-                  <div className="flex items-center space-x-4 mb-6">
-                    <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center shadow-lg">
-                      <stat.icon className="w-7 h-7 text-white" />
+                <div className="bg-gradient-to-br from-white/80 to-white/40 dark:from-gray-900/80 dark:to-gray-800/40 backdrop-blur-2xl rounded-2xl p-4 sm:p-6 md:p-8 border border-gray-200/50 dark:border-gray-700/50 shadow-2xl hover:shadow-4xl transition-all duration-500">
+                  <div className="flex items-center space-x-3 sm:space-x-4 mb-4 sm:mb-6">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center shadow-lg">
+                      <stat.icon className="w-5 h-5 sm:w-6 sm:h-6 md:w-7 md:h-7 text-white" />
                     </div>
                     <div>
-                      <div className="text-3xl font-bold text-gray-900 dark:text-white flex items-baseline">
+                      <div className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 dark:text-white flex items-baseline">
                         {stat.value}
-                        <span className="text-blue-500 ml-2">{stat.suffix}</span>
+                        <span className="text-blue-500 ml-1 sm:ml-2 text-sm sm:text-base md:text-lg">{stat.suffix}</span>
                       </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400 font-medium">
+                      <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 font-medium">
                         {stat.label}
                       </div>
                     </div>
@@ -925,19 +1106,19 @@ export default function StorefrontPage() {
       </section>
 
       {/* ------------------- PRODUCTS SECTION ------------------- */}
-      <section id="products-section" className="relative py-32">
-        <div className="max-w-8xl mx-auto px-6 lg:px-8">
+      <section id="products-section" className="relative py-20 sm:py-32">
+        <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Section Header */}
-          <div className="text-center mb-20">
+          <div className="text-center mb-12 sm:mb-20">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              className="inline-block mb-6"
+              className="inline-block mb-4 sm:mb-6"
             >
-              <div className="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border border-blue-500/20">
-                <StarIcon className="w-4 h-4 text-blue-600 dark:text-blue-400 mr-2" />
-                <span className="text-sm font-semibold text-blue-700 dark:text-blue-300">
+              <div className="inline-flex items-center px-3 py-1.5 sm:px-4 sm:py-2 rounded-full bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border border-blue-500/20">
+                <StarIcon className="w-3 h-3 sm:w-4 sm:h-4 text-blue-600 dark:text-blue-400 mr-2" />
+                <span className="text-xs sm:text-sm font-semibold text-blue-700 dark:text-blue-300">
                   ENTERPRISE PORTFOLIO
                 </span>
               </div>
@@ -947,7 +1128,7 @@ export default function StorefrontPage() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: 0.1 }}
-              className="text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-6"
+              className="text-2xl sm:text-3xl lg:text-4xl xl:text-5xl font-bold text-gray-900 dark:text-white mb-4 sm:mb-6"
             >
               Enterprise <span className="text-blue-600 dark:text-blue-400">Product</span> Catalog
             </motion.h2>
@@ -956,14 +1137,21 @@ export default function StorefrontPage() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: 0.2 }}
-              className="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto"
+              className="text-base sm:text-lg lg:text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto"
             >
               Discover our comprehensive range of industrial-grade materials, engineered for professional excellence and unmatched reliability.
             </motion.p>
           </div>
 
-          {/* Enhanced Tabs - Mobile Adaptive */}
-          <div className="mb-16">
+          {/* Mobile Tabs Component */}
+          <MobileTabs
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            productsByType={productsByType}
+          />
+
+          {/* Desktop Tabs - Enhanced for Mobile */}
+          <div className="hidden md:block mb-16">
             <Tabs
               selectedKey={activeTab}
               onSelectionChange={(key) => setActiveTab(key as any)}
@@ -971,8 +1159,8 @@ export default function StorefrontPage() {
               classNames={{
                 base: "w-full",
                 tabList: "gap-2 w-full relative rounded-2xl p-2 bg-gradient-to-r from-gray-100 to-gray-50/50 dark:from-gray-900 dark:to-gray-800/50 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 overflow-x-auto flex-nowrap",
-                tab: "h-14 px-6 rounded-xl data-[selected=true]:bg-gradient-to-r data-[selected=true]:from-blue-600 data-[selected=true]:to-cyan-500 data-[selected=true]:shadow-2xl transition-all duration-300 whitespace-nowrap",
-                tabContent: "font-semibold text-sm uppercase tracking-wider text-gray-800 dark:text-gray-200 group-data-[selected=true]:text-white"
+                tab: "h-12 md:h-14 px-4 md:px-6 rounded-xl data-[selected=true]:bg-gradient-to-r data-[selected=true]:from-blue-600 data-[selected=true]:to-cyan-500 data-[selected=true]:shadow-2xl transition-all duration-300 whitespace-nowrap",
+                tabContent: "font-semibold text-xs md:text-sm uppercase tracking-wider text-gray-800 dark:text-gray-200 group-data-[selected=true]:text-white"
               }}
             >
               {(["roll", "metre", "board", "unit"] as const).map((tabKey) => {
@@ -988,9 +1176,9 @@ export default function StorefrontPage() {
                   <Tab
                     key={tabKey}
                     title={
-                      <div className="flex items-center space-x-3">
+                      <div className="flex items-center space-x-2 md:space-x-3">
                         <span>{tabLabels[tabKey].label}</span>
-                        <span className="px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs font-bold">
+                        <span className="px-1.5 md:px-2 py-0.5 md:py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs font-bold">
                           {tabProducts.length}
                         </span>
                       </div>
@@ -998,20 +1186,20 @@ export default function StorefrontPage() {
                   >
                     <div className="mt-12">
                       {paginatedProducts.length === 0 ? (
-                        <div className="text-center py-32">
-                          <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center">
-                            <BuildingStorefrontIcon className="w-12 h-12 text-gray-400" />
+                        <div className="text-center py-16 sm:py-32">
+                          <div className="w-16 h-16 sm:w-24 sm:h-24 mx-auto mb-4 sm:mb-6 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center">
+                            <BuildingStorefrontIcon className="w-8 h-8 sm:w-12 sm:h-12 text-gray-400" />
                           </div>
-                          <h3 className="text-2xl font-bold text-gray-700 dark:text-gray-300 mb-3">
+                          <h3 className="text-lg sm:text-2xl font-bold text-gray-700 dark:text-gray-300 mb-2 sm:mb-3">
                             No Products Available
                           </h3>
-                          <p className="text-gray-500 dark:text-gray-400">
+                          <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400">
                             Check back soon for updates in this category.
                           </p>
                         </div>
                       ) : (
                         <>
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
                             {paginatedProducts.map((product, index) => (
                               <ProductCard key={product.id} product={product} index={index} />
                             ))}
@@ -1027,22 +1215,94 @@ export default function StorefrontPage() {
               })}
             </Tabs>
           </div>
+
+          {/* Mobile Products Grid - Show when tabs are hidden */}
+          <div className="md:hidden">
+            <div className="mt-8">
+              {paginatedProducts.length === 0 ? (
+                <div className="text-center py-16">
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center">
+                    <BuildingStorefrontIcon className="w-8 h-8 text-gray-400" />
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-700 dark:text-gray-300 mb-2">
+                    No Products Available
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Check back soon for updates in this category.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-6">
+                    {paginatedProducts.map((product, index) => (
+                      <ProductCard key={product.id} product={product} index={index} />
+                    ))}
+                  </div>
+
+                  {/* Mobile Pagination */}
+                  {totalPages > 1 && (
+                    <div className="flex flex-col items-center gap-4 mt-8">
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        Page {currentPage} of {totalPages}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          isDisabled={currentPage === 1}
+                          onPress={() => setCurrentPage(prev => prev - 1)}
+                          variant="flat"
+                          size="sm"
+                          className="min-w-12"
+                        >
+                          <ChevronLeftIcon className="w-4 h-4" />
+                        </Button>
+                        <div className="flex items-center gap-1">
+                          {[currentPage - 1, currentPage, currentPage + 1]
+                            .filter(page => page >= 1 && page <= totalPages)
+                            .map(page => (
+                              <Button
+                                key={page}
+                                onPress={() => setCurrentPage(page)}
+                                variant={currentPage === page ? "solid" : "flat"}
+                                color={currentPage === page ? "primary" : "default"}
+                                size="sm"
+                                className="min-w-10"
+                              >
+                                {page}
+                              </Button>
+                            ))}
+                        </div>
+                        <Button
+                          isDisabled={currentPage === totalPages}
+                          onPress={() => setCurrentPage(prev => prev + 1)}
+                          variant="flat"
+                          size="sm"
+                          className="min-w-12"
+                        >
+                          <ChevronRightIcon className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
         </div>
       </section>
 
       {/* ------------------- ENTERPRISE FEATURES ------------------- */}
-      <section className="relative py-32 bg-gradient-to-b from-white to-gray-50/50 dark:from-gray-950 dark:to-gray-900/50">
-        <div className="max-w-8xl mx-auto px-6 lg:px-8">
-          <div className="text-center mb-20">
+      <section className="relative py-20 sm:py-32 bg-gradient-to-b from-white to-gray-50/50 dark:from-gray-950 dark:to-gray-900/50">
+        <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12 sm:mb-20">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              className="inline-block mb-6"
+              className="inline-block mb-4 sm:mb-6"
             >
-              <div className="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border border-blue-500/20">
-                <CheckCircleIcon className="w-4 h-4 text-blue-600 dark:text-blue-400 mr-2" />
-                <span className="text-sm font-semibold text-blue-700 dark:text-blue-300">
+              <div className="inline-flex items-center px-3 py-1.5 sm:px-4 sm:py-2 rounded-full bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border border-blue-500/20">
+                <CheckCircleIcon className="w-3 h-3 sm:w-4 sm:h-4 text-blue-600 dark:text-blue-400 mr-2" />
+                <span className="text-xs sm:text-sm font-semibold text-blue-700 dark:text-blue-300">
                   WHY CHOOSE US
                 </span>
               </div>
@@ -1051,7 +1311,7 @@ export default function StorefrontPage() {
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              className="text-4xl lg:text-5xl font-bold text-gray-900 dark:text-white mb-6"
+              className="text-2xl sm:text-3xl lg:text-4xl xl:text-5xl font-bold text-gray-900 dark:text-white mb-4 sm:mb-6"
             >
               Enterprise <span className="text-blue-600 dark:text-blue-400">Advantages</span>
             </motion.h2>
@@ -1059,13 +1319,13 @@ export default function StorefrontPage() {
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              className="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto"
+              className="text-base sm:text-lg lg:text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto"
             >
               Solutions built for scale, reliability, and professional excellence.
             </motion.p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
             {[
               {
                 icon: ShieldCheckIcon,
@@ -1098,22 +1358,22 @@ export default function StorefrontPage() {
                 className="relative group"
               >
                 <Link to={feature.link}>
-                  <div className="bg-gradient-to-br from-white/80 to-white/40 dark:from-gray-900/80 dark:to-gray-800/40 backdrop-blur-2xl rounded-2xl p-8 border border-gray-200/50 dark:border-gray-700/50 shadow-2xl hover:shadow-4xl transition-all duration-500 h-full">
-                    <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${feature.gradient} p-0.5 mb-6 shadow-lg`}>
+                  <div className="bg-gradient-to-br from-white/80 to-white/40 dark:from-gray-900/80 dark:to-gray-800/40 backdrop-blur-2xl rounded-2xl p-6 sm:p-8 border border-gray-200/50 dark:border-gray-700/50 shadow-2xl hover:shadow-4xl transition-all duration-500 h-full">
+                    <div className={`w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-2xl bg-gradient-to-br ${feature.gradient} p-0.5 mb-4 sm:mb-6 shadow-lg`}>
                       <div className="w-full h-full rounded-xl bg-white dark:bg-gray-900 flex items-center justify-center">
-                        <feature.icon className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+                        <feature.icon className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 text-blue-600 dark:text-blue-400" />
                       </div>
                     </div>
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+                    <h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white mb-3 sm:mb-4">
                       {feature.title}
                     </h3>
-                    <p className="text-gray-600 dark:text-gray-400 mb-6">
+                    <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 mb-4 sm:mb-6">
                       {feature.description}
                     </p>
-                    <div className="pt-6 border-t border-gray-200/50 dark:border-gray-700/50">
+                    <div className="pt-4 sm:pt-6 border-t border-gray-200/50 dark:border-gray-700/50">
                       <button className="text-blue-600 dark:text-blue-400 font-semibold text-sm flex items-center group-hover:translate-x-2 transition-transform">
                         Learn more
-                        <ArrowRightIcon className="w-4 h-4 ml-2" />
+                        <ArrowRightIcon className="w-3 h-3 sm:w-4 sm:h-4 ml-2" />
                       </button>
                     </div>
                   </div>
@@ -1125,34 +1385,34 @@ export default function StorefrontPage() {
       </section>
 
       {/* ------------------- EXECUTIVE FOOTER ------------------- */}
-      <footer className="relative bg-gradient-to-br from-gray-900 to-gray-950 text-white py-24">
+      <footer className="relative bg-gradient-to-br from-gray-900 to-gray-950 text-white py-16 sm:py-24">
         {/* Background Effects */}
         <div className="absolute inset-0">
           <div className="absolute top-0 left-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl" />
           <div className="absolute bottom-0 right-0 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl" />
         </div>
 
-        <div className="relative max-w-8xl mx-auto px-6 lg:px-8">
-          <div className="grid md:grid-cols-4 gap-12">
+        <div className="relative max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 sm:gap-12">
             {/* Company */}
             <div>
               <div className="flex items-center space-x-3 mb-6">
-                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center">
-                  <div className="text-xl font-bold text-white">AP</div>
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center">
+                  <div className="text-lg sm:text-xl font-bold text-white">AP</div>
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold">Almon Products</h2>
-                  <p className="text-sm text-gray-400">Enterprise Solutions</p>
+                  <h2 className="text-xl sm:text-2xl font-bold">Almon Products</h2>
+                  <p className="text-xs sm:text-sm text-gray-400">Enterprise Solutions</p>
                 </div>
               </div>
-              <p className="text-gray-400 mb-8 leading-relaxed">
+              <p className="text-sm sm:text-base text-gray-400 mb-6 sm:mb-8 leading-relaxed">
                 Delivering excellence through premium materials and professional solutions for enterprise clients since 2015.
               </p>
-              <div className="flex space-x-4">
+              <div className="flex space-x-3 sm:space-x-4">
                 {['Twitter', 'LinkedIn', 'Instagram'].map((social) => (
                   <button
                     key={social}
-                    className="w-10 h-10 rounded-lg bg-gray-800 hover:bg-gray-700 flex items-center justify-center transition-colors hover:scale-110"
+                    className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-gray-800 hover:bg-gray-700 flex items-center justify-center transition-colors hover:scale-110 text-xs sm:text-sm"
                   >
                     {social.charAt(0)}
                   </button>
@@ -1195,20 +1455,20 @@ export default function StorefrontPage() {
                   { name: "Service Status", to: "/support#status" }
                 ]
               }
-            ].map((column) => {
+            ].map((column, colIndex) => {
               const Icon = column.icon;
               return (
-                <div key={column.title}>
-                  <div className="flex items-center space-x-2 mb-6">
-                    <Icon className="w-5 h-5 text-blue-400" />
-                    <h3 className="text-lg font-bold text-white">{column.title}</h3>
+                <div key={column.title} className={colIndex > 1 ? "md:col-span-2 lg:col-span-1" : ""}>
+                  <div className="flex items-center space-x-2 mb-4 sm:mb-6">
+                    <Icon className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" />
+                    <h3 className="text-base sm:text-lg font-bold text-white">{column.title}</h3>
                   </div>
-                  <ul className="space-y-4">
+                  <ul className="space-y-2 sm:space-y-3">
                     {column.links.map((link) => (
                       <li key={link.name}>
                         <Link
                           to={link.to}
-                          className="text-gray-400 hover:text-white transition-colors hover:translate-x-2 inline-block"
+                          className="text-xs sm:text-sm text-gray-400 hover:text-white transition-colors hover:translate-x-2 inline-block"
                         >
                           {link.name}
                         </Link>
@@ -1221,19 +1481,19 @@ export default function StorefrontPage() {
           </div>
 
           {/* Bottom Bar */}
-          <div className="mt-20 pt-8 border-t border-gray-800">
+          <div className="mt-12 sm:mt-20 pt-6 sm:pt-8 border-t border-gray-800">
             <div className="flex flex-col md:flex-row justify-between items-center">
-              <p className="text-gray-400 text-sm">
+              <p className="text-xs sm:text-sm text-gray-400 text-center md:text-left mb-4 md:mb-0">
                 © {new Date().getFullYear()} Almon Products Ltd. All rights reserved.
               </p>
-              <div className="flex space-x-6 mt-4 md:mt-0">
-                <Link to="/privacy-policy" className="text-sm text-gray-400 hover:text-white transition-colors">
+              <div className="flex space-x-4 sm:space-x-6">
+                <Link to="/privacy-policy" className="text-xs sm:text-sm text-gray-400 hover:text-white transition-colors">
                   Privacy Policy
                 </Link>
-                <Link to="/terms-of-service" className="text-sm text-gray-400 hover:text-white transition-colors">
+                <Link to="/terms-of-service" className="text-xs sm:text-sm text-gray-400 hover:text-white transition-colors">
                   Terms of Service
                 </Link>
-                <Link to="/cookie-policy" className="text-sm text-gray-400 hover:text-white transition-colors">
+                <Link to="/cookie-policy" className="text-xs sm:text-sm text-gray-400 hover:text-white transition-colors">
                   Cookie Policy
                 </Link>
               </div>
@@ -1252,7 +1512,7 @@ export default function StorefrontPage() {
           setDrawerOpen(false);
           setCheckoutOpen(true);
         }}
-        onClearAll={handleClearCart} // Add this prop
+        onClearAll={handleClearCart}
         subtotal={subtotal}
         deliveryFee={deliveryFee}
         total={total}
@@ -1261,14 +1521,14 @@ export default function StorefrontPage() {
       <CheckoutModal
         isOpen={checkoutOpen}
         onClose={() => setCheckoutOpen(false)}
-        total={total + (subtotal * 0.16)} // Make sure to include VAT
+        total={total + (subtotal * 0.16)}
         cartItems={cart}
         productSaleType={useApiProducts ? apiProductSaleType : productSaleType}
         storeId="STR251100001"
         deliveryFee={deliveryFee}
         deliveryArea={deliveryArea}
-        onClearCart={handleClearCart} // Add this prop
-        onCheckoutSuccess={handleCheckoutSuccess} // Add this prop
+        onClearCart={handleClearCart}
+        onCheckoutSuccess={handleCheckoutSuccess}
       />
 
       <AnimatePresence>
