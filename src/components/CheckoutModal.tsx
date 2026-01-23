@@ -30,10 +30,7 @@ import {
   ArrowPathIcon,
   BanknotesIcon,
   ChartBarIcon,
-  XMarkIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  Bars3Icon,
+  XMarkIcon
 } from "@heroicons/react/24/outline";
 
 interface CartItem {
