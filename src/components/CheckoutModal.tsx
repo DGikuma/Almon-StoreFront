@@ -266,13 +266,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
-  const initiateMpesaPayment = async (orderId: string, phone: string, amount: number) => {
+  const initiateMpesaPayment = async (id: string, phone: string, amount: number) => {
     const formattedPhone = formatPhoneForMpesa(phone);
     let checkoutRequestId: string | null = null;
     let stkPushResponseData: any = null;
 
     // First, check if order already has completed payment
-    const existingOrder = await checkExistingOrder(orderId);
+    const existingOrder = await checkExistingOrder(id);
 
     if (existingOrder.exists && existingOrder.hasCompletedPayment) {
       const completedPayment = existingOrder.data.payments?.find((p: any) =>
@@ -292,10 +292,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     // Use the correct endpoint for STK push
     try {
-      console.log("Initiating STK push via:", `${API_BASE_URL}/customer/orders/${orderId}/pay`);
+      console.log("Initiating STK push via:", `${API_BASE_URL}/customer/orders/${id}/pay`);
 
       const requestData = {
-        sale_id: orderId,
+        sale_id: id,
         payment_method: "mpesa",
         phone_number: formattedPhone,
         amount: amount
@@ -304,7 +304,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       console.log("Request data:", requestData);
 
       const response = await axios.post(
-        `${API_BASE_URL}/customer/orders/${orderId}/pay`,
+        `${API_BASE_URL}/customer/orders/${id}/pay`,
         requestData,
         {
           headers: {
