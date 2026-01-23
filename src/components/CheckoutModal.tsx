@@ -984,7 +984,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   onPress={handleModalClose}
                   isDisabled={loading}
                   size={isMobile ? "sm" : "md"}
-                  className={`border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 ${isMobile ? 'flex-1' : ''}`}
+                  className={`border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 ${isMobile ? 'flex-1 text-sm' : ''}`}
                 >
                   Cancel
                 </Button>
@@ -1003,7 +1003,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 )}
               </div>
 
-              <div className={`flex gap-2 md:gap-3 ${isMobile ? 'w-full' : ''}`}>
+              <div className={`flex gap-2 md:gap-3 ${isMobile ? 'w-full mt-2' : ''}`}>
                 {activeStep === 'details' && (
                   <Button
                     color="primary"
@@ -1011,7 +1011,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     onPress={() => setActiveStep('review')}
                     isDisabled={!isFormValid()}
                     size={isMobile ? "sm" : "md"}
-                    className={`border-blue-600 text-blue-600 dark:text-blue-400 ${isMobile ? 'flex-1' : ''}`}
+                    className={`border-blue-600 text-blue-600 dark:text-blue-400 ${isMobile ? 'flex-1 w-full text-sm' : ''}`}
                   >
                     {isMobile ? 'Continue' : 'Review Order'}
                   </Button>
@@ -1024,13 +1024,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     isLoading={loading}
                     isDisabled={!isFormValid()}
                     size={isMobile ? "sm" : "md"}
-                    className={`bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-semibold hover:shadow-xl hover:scale-[1.02] transition-all duration-300 ${isMobile ? 'flex-1 py-4' : 'min-w-[240px] py-6'}`}
+                    className={`bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-semibold hover:shadow-xl transition-all duration-300 ${isMobile
+                      ? 'flex-1 w-full text-sm py-3'
+                      : 'min-w-[180px] md:min-w-[240px] py-6'
+                      }`}
                     startContent={!loading && <CreditCardIcon className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5'}`} />}
                   >
                     {loading ? (
                       <span>{isMobile ? "Processing..." : "Processing..."}</span>
                     ) : (
-                      <span>{isMobile ? "Place Order & Pay" : "Place Order & Pay"}</span>
+                      <span>{isMobile ? "Place Order" : "Place Order & Pay"}</span>
                     )}
                   </Button>
                 )}
@@ -1045,7 +1048,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   onPress={() => setActiveStep('details')}
                   isDisabled={loading}
                   size="sm"
-                  className="w-full text-gray-700 dark:text-gray-300"
+                  className="w-full text-gray-700 dark:text-gray-300 text-sm"
                   startContent={<ArrowPathIcon className="w-4 h-4" />}
                 >
                   Edit Details
