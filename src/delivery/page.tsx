@@ -219,117 +219,80 @@ export function ConfirmDeliveryModal({ isOpen, onClose }: ConfirmDeliveryModalPr
     }
   };
 
-  const generateOtpForDelivery = async () => {
-    const deliveredItems = items.filter((i) => i.confirmed);
-    if (deliveredItems.length === 0) {
-      setOtpError("Please select at least one item for delivery");
+  const loadDeliveryItems = async () => {
+    if (!deliveryId.trim()) {
+      setError("Please enter a delivery ID or order number");
       return;
     }
 
-    // Get the customer's phone number
-    let customerPhone = "";
-
-    if (customerInfo?.phone) {
-      customerPhone = customerInfo.phone;
-    } else if (orderInfo?.phone_number) {
-      customerPhone = orderInfo.phone_number;
-    }
-
-    if (!customerPhone) {
-      setOtpError("Customer phone number not found. Cannot send OTP.");
-      return;
-    }
-
-    // Format phone number
-    const formatPhone = (phone: string) => {
-      let cleaned = phone.replace(/\D/g, '');
-
-      if (cleaned.startsWith('0')) {
-        cleaned = `254${cleaned.substring(1)}`;
-      } else if (cleaned.startsWith('+254')) {
-        cleaned = cleaned.substring(1);
-      } else if (!cleaned.startsWith('254')) {
-        cleaned = `254${cleaned}`;
-      }
-
-      return cleaned;
-    };
-
-    const formattedPhone = formatPhone(customerPhone);
-
-    // Prepare products array
-    const products: ProductItem[] = deliveredItems.map((item) => ({
-      product_id: item.product_id,
-      quantity: item.quantity,
-      unit: item.unit || "pcs",
-    }));
-
-    console.log("Sending OTP to:", {
-      delivery_id: deliveryId,
-      customer_phone: formattedPhone,
-      products: products,
-      raw_customer_phone: customerPhone
-    });
-
-    setOtpLoading(true);
-    setOtpError("");
+    setLoading(true);
+    setError("");
+    setItems([]);
+    setOrderInfo(null);
+    setCustomerInfo(null);
 
     try {
-      const payload = {
-        delivery_id: deliveryId,
-        customer_phone: formattedPhone,
-        products
-      };
+      const orderData = await fetchOrderDetails(deliveryId);
 
-      console.log("Calling API with payload:", payload);
+      if (!orderData) {
+        setError("Order/Delivery not found. Please check the ID.");
+        return;
+      }
 
-      // Use the correct endpoint
-      const endpoint = `${API_BASE}/customer/orders/confirm`;
+      setOrderInfo(orderData);
 
-      console.log(`Using endpoint: ${endpoint}`);
+      // Set customer info from delivery
+      if (orderData.delivery) {
+        setCustomerInfo({
+          name: orderData.delivery.recipient_name || orderData.customer_name,
+          phone: orderData.delivery.recipient_phone,
+          email: orderData.delivery.recipient_email,
+          address: orderData.delivery.delivery_address,
+        });
+      } else if (orderData.customer_name) {
+        setCustomerInfo({
+          name: orderData.customer_name,
+          phone: orderData.phone_number,
+        });
+      }
 
-      const response = await axios.post(endpoint, payload, {
-        timeout: 10000,
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      });
+      // Transform items - use the actual item data from the order
+      if (orderData.items && Array.isArray(orderData.items)) {
+        const transformedItems: OrderItem[] = orderData.items.map((item: any, index: number) => {
+          // Use the actual product_id from the item if available
+          // You might need to adjust this based on the actual item structure
+          const productId = item.product_id || item.id || `item-${index}`;
 
-      console.log("API Response:", response.data);
-
-      if (response.data && (response.data.success || response.data.message || response.data.status === 'success')) {
-        setOtpSent(true);
-        setDeliveryCompleted(true);
-
-        // Auto close after 5 seconds
-        setTimeout(() => {
-          onClose();
-          resetState();
-        }, 5000);
+          return {
+            id: item.id || `item-${index}`,
+            product_id: productId,
+            name: item.name || item.product_name || `Item ${index + 1}`,
+            quantity: item.quantity || 1,
+            price: parseFloat(item.price) || 0,
+            unit: item.unit || "pcs",
+            confirmed: true,
+          };
+        });
+        setItems(transformedItems);
       } else {
-        throw new Error(response.data?.message || "Failed to generate OTP");
+        // Fallback if no items array
+        const sampleItems: OrderItem[] = [{
+          id: "sample-1",
+          product_id: "default-product-id", // You might need to adjust this
+          name: "Order Item",
+          quantity: 1,
+          price: parseFloat(orderData.payable_amount) || 0,
+          unit: "pcs",
+          confirmed: true,
+        }];
+        setItems(sampleItems);
       }
+
     } catch (err: any) {
-      console.error("Error generating OTP:", err);
-
-      let errorMessage = "Failed to send OTP. Please try again.";
-
-      if (err.response?.data?.message) {
-        errorMessage = err.response.data.message;
-      } else if (err.response?.data?.error) {
-        errorMessage = err.response.data.error;
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
-
-      // Check if it's a 404 error
-      if (err.response?.status === 404) {
-        errorMessage = "Delivery confirmation endpoint not found. Please contact support.";
-      }
-
-      setOtpError(errorMessage);
+      console.error("Error loading delivery:", err);
+      setError(err.message || "Unable to connect to the backend.");
     } finally {
-      setOtpLoading(false);
+      setLoading(false);
     }
   };
 
