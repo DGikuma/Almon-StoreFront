@@ -283,7 +283,7 @@ export function ConfirmDeliveryModal({ isOpen, onClose }: ConfirmDeliveryModalPr
 
       console.log("Calling API with payload:", payload);
 
-      const response = await axios.post(`${API_BASE}/api/Customer/confirmOrder`, payload);
+      const response = await axios.post(`${API_BASE}/Customer/confirmOrder`, payload);
 
       console.log("API Response:", response.data);
 
