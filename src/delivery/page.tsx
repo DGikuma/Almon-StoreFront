@@ -69,6 +69,37 @@ export function ConfirmDeliveryModal({ isOpen, onClose }: ConfirmDeliveryModalPr
     return () => window.removeEventListener('resize', checkScreenSize);
   }, []);
 
+  // Handle keyboard events for mobile
+  useEffect(() => {
+    if (!isMobile || !isOpen) return;
+
+    const handleVisualViewportChange = () => {
+      if (window.visualViewport) {
+        // Adjust modal content position when keyboard appears
+        const modalContent = document.querySelector('[data-modal-content]') as HTMLDivElement;
+        if (modalContent) {
+          modalContent.style.position = 'fixed';
+          modalContent.style.bottom = '0';
+          modalContent.style.left = '0';
+          modalContent.style.right = '0';
+          modalContent.style.maxHeight = `${window.visualViewport.height}px`;
+        }
+      }
+    };
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleVisualViewportChange);
+      window.visualViewport.addEventListener('scroll', handleVisualViewportChange);
+    }
+
+    return () => {
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleVisualViewportChange);
+        window.visualViewport.removeEventListener('scroll', handleVisualViewportChange);
+      }
+    };
+  }, [isMobile, isOpen]);
+
   // Reset state when modal opens/closes
   useEffect(() => {
     if (!isOpen) {
@@ -291,6 +322,16 @@ export function ConfirmDeliveryModal({ isOpen, onClose }: ConfirmDeliveryModalPr
     }
   };
 
+  // Helper function to scroll input into view on focus
+  const handleInputFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    if (!isMobile) return;
+
+    // Scroll the input into view
+    setTimeout(() => {
+      e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  };
+
   const getModalSize = () => {
     if (isMobile) return "full";
     return "4xl";
@@ -302,21 +343,43 @@ export function ConfirmDeliveryModal({ isOpen, onClose }: ConfirmDeliveryModalPr
       onClose={onClose}
       size={getModalSize()}
       className="backdrop-blur-xl"
-      scrollBehavior="inside"
+      scrollBehavior="outside"
       backdrop="blur"
       placement={isMobile ? "bottom" : "auto"}
-    >
-      <ModalContent className={`
-        ${isMobile
-          ? 'h-[90svh] max-h-[90svh] rounded-t-3xl m-0'
-          : 'max-h-[90vh] rounded-2xl'
+      motionProps={isMobile ? {
+        variants: {
+          enter: {
+            y: 0,
+            opacity: 1,
+            transition: {
+              duration: 0.3,
+              ease: "easeOut",
+            },
+          },
+          exit: {
+            y: "100%",
+            opacity: 0,
+            transition: {
+              duration: 0.2,
+              ease: "easeIn",
+            },
+          },
         }
-        bg-gradient-to-b from-white via-gray-50 to-white 
-        dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 
-        border-2 border-gray-200/30 dark:border-gray-700/30 
-        shadow-2xl shadow-blue-500/5 dark:shadow-blue-500/10
-        flex flex-col
-      `}>
+      } : undefined}
+    >
+      <ModalContent
+        data-modal-content
+        className={`
+          ${isMobile
+            ? 'h-[90svh] max-h-[90svh] rounded-t-3xl m-0 !fixed !bottom-0 !left-0 !right-0'
+            : 'max-h-[90vh] rounded-2xl'
+          }
+          bg-gradient-to-b from-white via-gray-50 to-white 
+          dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 
+          border-2 border-gray-200/30 dark:border-gray-700/30 
+          shadow-2xl shadow-blue-500/5 dark:shadow-blue-500/10
+          flex flex-col
+        `}>
         {/* Gradient Top Border */}
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-600 via-cyan-500 to-purple-600" />
 
@@ -360,10 +423,11 @@ export function ConfirmDeliveryModal({ isOpen, onClose }: ConfirmDeliveryModalPr
           </div>
         </ModalHeader>
 
-        <ModalBody className={`
-          overflow-y-auto flex-grow
-          ${isMobile ? 'pt-4 px-4 pb-4' : 'pt-6 px-8'}
-        `}>
+        <ModalBody
+          className={`
+            overflow-y-auto flex-grow
+            ${isMobile ? 'pt-4 px-4 pb-4' : 'pt-6 px-8'}
+          `}>
           {/* Delivery ID Input Section */}
           <div className="space-y-4 mb-6">
             <div className={isMobile ? 'space-y-3' : 'grid lg:grid-cols-4 gap-4'}>
@@ -376,6 +440,7 @@ export function ConfirmDeliveryModal({ isOpen, onClose }: ConfirmDeliveryModalPr
                     value={deliveryId}
                     onChange={(e) => setDeliveryId(e.target.value)}
                     onKeyPress={handleKeyPress}
+                    onFocus={handleInputFocus}
                     isDisabled={loading || otpSent || deliveryCompleted}
                     variant="bordered"
                     className="w-full"
@@ -725,8 +790,8 @@ export function ConfirmDeliveryModal({ isOpen, onClose }: ConfirmDeliveryModalPr
                         <div
                           key={item.id}
                           className={`flex items-center justify-between ${isMobile ? 'p-3' : 'p-4'} rounded-xl transition-all duration-300 ${item.confirmed
-                              ? 'bg-gradient-to-r from-green-50/50 to-emerald-50/30 dark:from-green-900/10 dark:to-emerald-900/5 border-2 border-green-200/50 dark:border-green-800/30'
-                              : 'bg-gray-50/50 dark:bg-gray-800/30 border-2 border-gray-200/30 dark:border-gray-700/30'
+                            ? 'bg-gradient-to-r from-green-50/50 to-emerald-50/30 dark:from-green-900/10 dark:to-emerald-900/5 border-2 border-green-200/50 dark:border-green-800/30'
+                            : 'bg-gray-50/50 dark:bg-gray-800/30 border-2 border-gray-200/30 dark:border-gray-700/30'
                             }`}
                         >
                           <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -750,8 +815,8 @@ export function ConfirmDeliveryModal({ isOpen, onClose }: ConfirmDeliveryModalPr
                               ${isMobile ? 'w-10 h-10' : 'w-14 h-14'}
                             `}>
                               <span className={`font-bold ${item.confirmed
-                                  ? 'text-green-600 dark:text-green-400'
-                                  : 'text-gray-600 dark:text-gray-400'
+                                ? 'text-green-600 dark:text-green-400'
+                                : 'text-gray-600 dark:text-gray-400'
                                 } ${isMobile ? 'text-base' : 'text-lg'}`}>
                                 {index + 1}
                               </span>
