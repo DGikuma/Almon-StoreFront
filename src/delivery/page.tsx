@@ -218,6 +218,19 @@ export function ConfirmDeliveryModal({ isOpen, onClose }: ConfirmDeliveryModalPr
         return;
       }
 
+      // Log payment and status info for debugging
+      console.log("Order status and payment info:", {
+        id: orderData.id,
+        sale_id: orderData.sale_id,
+        status: orderData.status,
+        payment_status: orderData.payment_status,
+        payable_amount: orderData.payable_amount,
+        total_amount: orderData.total_amount,
+        payments: orderData.payments,
+        delivery_status: orderData.delivery?.status,
+        delivery_otp_verified: orderData.delivery?.otp_verified
+      });
+
       setOrderInfo(orderData);
 
       // Set customer info from delivery
@@ -239,7 +252,7 @@ export function ConfirmDeliveryModal({ isOpen, onClose }: ConfirmDeliveryModalPr
       if (orderData.items && Array.isArray(orderData.items)) {
         const transformedItems: OrderItem[] = orderData.items.map((item: any, index: number) => {
           // Use the actual item id (UUID) from the item
-          const productId = item.id || `item-${index}`;
+          const productId = item.id || item.product_id || `item-${index}`;
 
           return {
             id: item.id || `item-${index}`,
@@ -319,30 +332,53 @@ export function ConfirmDeliveryModal({ isOpen, onClose }: ConfirmDeliveryModalPr
       unit: item.unit || "pcs",
     }));
 
-    console.log("Sending OTP to:", {
-      delivery_id: orderInfo?.delivery?.id, // Use the delivery UUID
-      customer_phone: formattedPhone,
-      products: products,
-      raw_customer_phone: customerPhone
+    // Debug: Log what we're sending
+    console.log("Sending OTP with order data:", {
+      orderId: orderInfo.id,
+      saleId: orderInfo.sale_id,
+      deliveryId: orderInfo?.delivery?.id,
+      customerPhone: formattedPhone,
+      orderStatus: orderInfo.status,
+      paymentStatus: orderInfo.payment_status,
+      totalAmount: orderInfo.payable_amount,
+      orderInfo: orderInfo
     });
 
     setOtpLoading(true);
     setOtpError("");
 
     try {
-      // Check if we have the delivery UUID
-      if (!orderInfo?.delivery?.id) {
-        throw new Error("Delivery UUID not found in order data");
+      // First, let's check if the sale is actually completed
+      // Look for payment status or sale completion status
+      const isSaleCompleted = orderInfo.status === 'completed' ||
+        orderInfo.payment_status === 'completed' ||
+        (orderInfo.payments && orderInfo.payments.some((p: any) => p.status === 'completed'));
+
+      if (!isSaleCompleted) {
+        throw new Error("Sale is not completed. Please ensure payment is completed first.");
       }
 
+      // IMPORTANT: Try using the ORDER ID (sale_id) instead of delivery UUID
+      // The backend might be expecting the sale/order ID, not the delivery UUID
+      const orderOrSaleId = orderInfo.sale_id || orderInfo.id || orderInfo?.delivery?.id;
+
+      if (!orderOrSaleId) {
+        throw new Error("Order/Sale ID not found in order data");
+      }
+
+      // Try different payload formats
       const payload = {
-        delivery_id: orderInfo.delivery.id, // Use the delivery UUID, not the order number
+        sale_id: orderInfo.sale_id || orderInfo.id, // Try with sale/order ID
+        order_id: orderInfo.id, // Also send order_id
+        delivery_id: orderInfo?.delivery?.id, // Keep delivery_id as backup
         customer_phone: formattedPhone,
-        products
+        products,
+        order_number: deliveryId // Send the original order number too
       };
 
       console.log("Calling API with payload:", payload);
-      console.log("Delivery UUID:", orderInfo.delivery.id);
+      console.log("Order/Sale ID:", orderInfo.sale_id || orderInfo.id);
+      console.log("Delivery UUID:", orderInfo?.delivery?.id);
 
       // Use the correct endpoint
       const endpoint = `${API_BASE}/customer/orders/confirm`;
@@ -373,11 +409,26 @@ export function ConfirmDeliveryModal({ isOpen, onClose }: ConfirmDeliveryModalPr
     } catch (err: any) {
       console.error("Error generating OTP:", err);
       console.error("Error response data:", err.response?.data);
+      console.error("Error status:", err.response?.status);
 
       let errorMessage = "Failed to send OTP. Please try again.";
 
       if (err.response?.data?.message) {
         errorMessage = err.response.data.message;
+
+        // Provide more specific guidance based on the error
+        if (errorMessage.includes("Sale must be completed")) {
+          errorMessage = `Order ${deliveryId} payment is not completed. Please ensure the payment is completed before confirming delivery.`;
+
+          // Check order status for debugging
+          console.log("Order status check:", {
+            orderId: orderInfo?.id,
+            status: orderInfo?.status,
+            paymentStatus: orderInfo?.payment_status,
+            payableAmount: orderInfo?.payable_amount,
+            totalAmount: orderInfo?.total_amount
+          });
+        }
       } else if (err.response?.data?.error) {
         errorMessage = err.response.data.error;
       } else if (err.message) {
@@ -682,6 +733,28 @@ export function ConfirmDeliveryModal({ isOpen, onClose }: ConfirmDeliveryModalPr
                               day: 'numeric'
                             }) : 'N/A'}
                           </p>
+                        </div>
+                        <div className="space-y-2">
+                          <p className={`font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 ${isMobile ? 'text-xs' : 'text-xs'}`}>
+                            Payment Status
+                          </p>
+                          <Chip
+                            size={isMobile ? "md" : "lg"}
+                            color={
+                              orderInfo.payment_status === 'completed' ? 'success' :
+                                orderInfo.status === 'completed' ? 'success' :
+                                  (orderInfo.payments && orderInfo.payments.some((p: any) => p.status === 'completed')) ? 'success' : 'warning'
+                            }
+                            variant="flat"
+                            classNames={{
+                              base: "px-3",
+                              content: "font-semibold text-xs"
+                            }}
+                          >
+                            {orderInfo.payment_status === 'completed' ? 'PAID' :
+                              orderInfo.status === 'completed' ? 'COMPLETED' :
+                                (orderInfo.payments && orderInfo.payments.some((p: any) => p.status === 'completed')) ? 'PAID' : 'PENDING'}
+                          </Chip>
                         </div>
                       </div>
                     </CardBody>
